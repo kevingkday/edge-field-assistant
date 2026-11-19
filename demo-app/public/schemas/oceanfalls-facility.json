@@ -1,0 +1,60 @@
+{
+  "id": "oceanfalls-facility",
+  "version": "1.0.0",
+  "name": "Ocean Falls Facility Ops",
+  "description": "Remote hydro-powered data center & industrial facility walk-through for power, cooling, and perimeter integrity.",
+  "domain": "facility_ops",
+  "persona": "industrial hydro and data center facility operations engineer",
+  "flagLabel": "Safety & Uptime Hazards",
+  "accentColor": "#10b981",
+  "items": [
+    {
+      "id": "penstock_intake",
+      "label": "Hydro Intake & Penstock Pressure",
+      "category": "Power Generation",
+      "promptHint": "Capture intake trash rack clearance, penstock pressure gauge, or turbine governor readout.",
+      "extractKeys": ["penstock_psi", "intake_status"],
+      "required": true
+    },
+    {
+      "id": "substation_switchgear",
+      "label": "Substation Transformer & Switchgear",
+      "category": "High Voltage",
+      "promptHint": "Snap transformer oil temperature gauge, busbar clearances, and breaker status.",
+      "extractKeys": ["transformer_temp_c", "breaker_state"],
+      "required": true
+    },
+    {
+      "id": "cooling_loop",
+      "label": "Heat Exchanger & River Cooling Loop",
+      "category": "Thermal Management",
+      "promptHint": "Capture supply/return manifold gauges, strainer differential, and pump vibration notes.",
+      "extractKeys": ["supply_temp_c", "return_temp_c", "flow_lpm"],
+      "required": true
+    },
+    {
+      "id": "ups_battery_room",
+      "label": "UPS Inverter & Battery Bank",
+      "category": "Backup Power",
+      "promptHint": "Snap UPS load percentage, battery rack terminals, and ventilation fan status.",
+      "extractKeys": ["ups_load_pct", "battery_health"],
+      "required": true
+    },
+    {
+      "id": "fiber_backhaul",
+      "label": "Fiber Demarc & Microwave Backhaul",
+      "category": "Connectivity",
+      "promptHint": "Capture optical patch panel, link LEDs, or dish alignment notes.",
+      "extractKeys": ["link_redundancy", "signal_dbm"],
+      "required": false
+    },
+    {
+      "id": "perimeter_safety",
+      "label": "Site Perimeter, Locks & PPE Compliance",
+      "category": "Security & Safety",
+      "promptHint": "Snap gate locks, spill containment berms, and emergency eyewash inspection tag.",
+      "extractKeys": ["perimeter_status", "eyewash_last_checked"],
+      "required": true
+    }
+  ]
+}

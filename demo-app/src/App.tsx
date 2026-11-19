@@ -1,0 +1,388 @@
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Activity, Plus, ShieldCheck } from 'lucide-react';
+import {
+  FieldAssistantRouter,
+  createChecklistFromSchema,
+  detectDeviceCapability,
+  downloadModelToOpfs,
+  mergeStepIntoChecklistState,
+  removeModelFromOpfs,
+  type CapturedMediaEntry,
+  type ChecklistItemState,
+  type DeviceCapability,
+  type FieldAppSchema,
+  type ModelDownloadProgress,
+  type StepEvaluationResult,
+  type TelemetrySnapshot,
+} from '@edge-field-assistant/core';
+import { FieldCaptureUI } from './components/FieldCaptureUI';
+import { SchemaBuilder } from './components/SchemaBuilder';
+import { TelemetryDrawer } from './components/TelemetryDrawer';
+
+const CUSTOM_SCHEMAS_STORAGE_KEY = 'edge_field_assistant_custom_schemas_v1';
+
+const FALLBACK_DEFAULT_SCHEMA: FieldAppSchema = {
+  id: 'twincover-cope',
+  version: '1.0.0',
+  name: 'TwinCover Commercial COPE',
+  description: 'Commercial property underwriting walk-through.',
+  domain: 'insurance',
+  persona: 'commercial insurance field underwriting copilot',
+  flagLabel: 'Underwriting Red Flags',
+  items: [
+    {
+      id: 'electrical_panel',
+      label: 'Main Electrical Panel & Amperage',
+      category: 'Protection / Systems',
+      promptHint: 'Open panel door; capture main breaker amperage and manufacturer.',
+      extractKeys: ['electrical_service'],
+      required: true,
+    },
+  ],
+};
+
+export default function App() {
+  const [schemas, setSchemas] = useState<FieldAppSchema[]>([FALLBACK_DEFAULT_SCHEMA]);
+  const [activeSchemaId, setActiveSchemaId] = useState<string>('twincover-cope');
+
+  const activeSchema = useMemo(
+    () => schemas.find((s) => s.id === activeSchemaId) || schemas[0] || FALLBACK_DEFAULT_SCHEMA,
+    [schemas, activeSchemaId]
+  );
+
+  const [checklist, setChecklist] = useState<ChecklistItemState[]>(() =>
+    createChecklistFromSchema(FALLBACK_DEFAULT_SCHEMA)
+  );
+  const [extractedData, setExtractedData] = useState<Record<string, unknown>>({});
+  const [flags, setFlags] = useState<string[]>([]);
+  const [photos, setPhotos] = useState<CapturedMediaEntry[]>([]);
+
+  const [capability, setCapability] = useState<DeviceCapability>({
+    state: 'unsupported',
+    reason: 'Probing WebGPU & OPFS...',
+    cachedSizeBytes: 0,
+    hasWebGpu: false,
+    hasOpfs: false,
+    deviceMemoryGb: null,
+  });
+  const [downloadProgress, setDownloadProgress] = useState<ModelDownloadProgress | null>(null);
+  const [downloadingModel, setDownloadingModel] = useState(false);
+  const [analyzingStep, setAnalyzingStep] = useState(false);
+  const [lastResult, setLastResult] = useState<StepEvaluationResult | null>(null);
+  const [handsFreeVoice, setHandsFreeVoice] = useState(true);
+
+  const [remoteEndpointUrl, setRemoteEndpointUrl] = useState('');
+  const [stepCount, setStepCount] = useState(0);
+  const [isOnline, setIsOnline] = useState(() =>
+    typeof navigator !== 'undefined' ? navigator.onLine : true
+  );
+  const [schemaModalOpen, setSchemaModalOpen] = useState(false);
+  const [telemetryOpen, setTelemetryOpen] = useState(false);
+
+  const routerRef = useRef<FieldAssistantRouter | null>(null);
+
+  if (!routerRef.current) {
+    routerRef.current = new FieldAssistantRouter({
+      wasmBaseUrl: '/wasm/',
+      createWorker: () =>
+        new Worker(
+          new URL('@edge-field-assistant/core/worker', import.meta.url),
+          { type: 'module' }
+        ),
+    });
+  }
+
+  // Load built-in schemas from /schemas/index.json + custom schemas from localStorage
+  useEffect(() => {
+    const loadAllSchemas = async () => {
+      const loaded: FieldAppSchema[] = [];
+      try {
+        const idxResp = await fetch('/schemas/index.json');
+        if (idxResp.ok) {
+          const files = (await idxResp.json()) as string[];
+          const fetched = await Promise.all(
+            files.map(async (file) => {
+              const r = await fetch(`/schemas/${file}`);
+              return r.ok ? ((await r.json()) as FieldAppSchema) : null;
+            })
+          );
+          for (const s of fetched) {
+            if (s) loaded.push(s);
+          }
+        }
+      } catch {
+        // offline fallback uses FALLBACK_DEFAULT_SCHEMA
+      }
+
+      try {
+        const rawCustom = localStorage.getItem(CUSTOM_SCHEMAS_STORAGE_KEY);
+        if (rawCustom) {
+          const customList = JSON.parse(rawCustom) as FieldAppSchema[];
+          for (const c of customList) {
+            if (!loaded.some((s) => s.id === c.id)) {
+              loaded.push(c);
+            }
+          }
+        }
+      } catch {
+        // ignore storage parse error
+      }
+
+      if (loaded.length > 0) {
+        setSchemas(loaded);
+        setActiveSchemaId(loaded[0].id);
+        setChecklist(createChecklistFromSchema(loaded[0]));
+      }
+    };
+
+    loadAllSchemas();
+  }, []);
+
+  // Probe hardware capability & listen to online/offline events
+  useEffect(() => {
+    detectDeviceCapability().then(setCapability);
+    const onOnline = () => setIsOnline(true);
+    const onOffline = () => setIsOnline(false);
+    window.addEventListener('online', onOnline);
+    window.addEventListener('offline', onOffline);
+
+    return () => {
+      window.removeEventListener('online', onOnline);
+      window.removeEventListener('offline', onOffline);
+      routerRef.current?.dispose();
+    };
+  }, []);
+
+  const handleSchemaSelect = (schemaId: string) => {
+    const next = schemas.find((s) => s.id === schemaId);
+    if (!next) return;
+    setActiveSchemaId(next.id);
+    setChecklist(createChecklistFromSchema(next));
+    setExtractedData({});
+    setFlags([]);
+    setPhotos([]);
+    setLastResult(null);
+  };
+
+  const handleSaveCustomSchema = (newSchema: FieldAppSchema) => {
+    setSchemas((prev) => {
+      const filtered = prev.filter((s) => s.id !== newSchema.id);
+      const next = [...filtered, newSchema];
+      try {
+        const customOnly = next.filter(
+          (s) => !['twincover-cope', 'oceanfalls-facility', 'twinflow-lead-intake'].includes(s.id)
+        );
+        localStorage.setItem(CUSTOM_SCHEMAS_STORAGE_KEY, JSON.stringify(customOnly));
+      } catch {
+        // ignore storage quota errors
+      }
+      return next;
+    });
+    setActiveSchemaId(newSchema.id);
+    setChecklist(createChecklistFromSchema(newSchema));
+    setExtractedData({});
+    setFlags([]);
+    setPhotos([]);
+    setLastResult(null);
+  };
+
+  const speakFeedback = (text: string, force = false) => {
+    if (!text || typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+    if (!handsFreeVoice && !force) return;
+    try {
+      window.speechSynthesis.cancel();
+      const utter = new SpeechSynthesisUtterance(text);
+      utter.rate = 1.03;
+      window.speechSynthesis.speak(utter);
+    } catch {
+      // ignore TTS restriction
+    }
+  };
+
+  const handleDownloadModel = async () => {
+    setDownloadingModel(true);
+    setDownloadProgress({ percent: 0, receivedBytes: 0, totalBytes: 0 });
+    try {
+      await downloadModelToOpfs((prog) => setDownloadProgress(prog));
+      const cap = await detectDeviceCapability();
+      setCapability(cap);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Model download failed');
+    } finally {
+      setDownloadingModel(false);
+    }
+  };
+
+  const handleDeleteModel = async () => {
+    await removeModelFromOpfs();
+    routerRef.current?.dispose();
+    routerRef.current = new FieldAssistantRouter({
+      wasmBaseUrl: '/wasm/',
+      remoteEndpointUrl: remoteEndpointUrl || undefined,
+      createWorker: () =>
+        new Worker(
+          new URL('@edge-field-assistant/core/worker', import.meta.url),
+          { type: 'module' }
+        ),
+    });
+    const cap = await detectDeviceCapability();
+    setCapability(cap);
+  };
+
+  const handleEvaluateStep = async (frameBlob: Blob | null, transcript: string) => {
+    if (!routerRef.current) return;
+    routerRef.current.setRemoteEndpoint(remoteEndpointUrl.trim() || undefined);
+    setAnalyzingStep(true);
+    try {
+      const result = await routerRef.current.evaluateStep({
+        schema: activeSchema,
+        checklist,
+        transcript,
+        imageBlob: frameBlob,
+      });
+
+      setLastResult(result);
+      setStepCount((c) => c + 1);
+      speakFeedback(result.spoken_feedback, result.already_completed);
+
+      const merged = mergeStepIntoChecklistState(checklist, extractedData, flags, result);
+      setChecklist(merged.checklist);
+      setExtractedData(merged.extractedData);
+      setFlags(merged.flags);
+
+      if (frameBlob) {
+        setPhotos((prev) => [
+          ...prev,
+          {
+            id: `photo_${Date.now()}`,
+            itemId: result.checklist_item_id || 'general',
+            detectedItem: result.detected_item,
+            filename: `${result.checklist_item_id || 'field'}_${Date.now()}.jpg`,
+            blob: frameBlob,
+            capturedAt: new Date().toISOString(),
+          },
+        ]);
+      }
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Step evaluation failed');
+    } finally {
+      setAnalyzingStep(false);
+    }
+  };
+
+  const handleExportSession = () => {
+    const payload = {
+      schemaId: activeSchema.id,
+      schemaName: activeSchema.name,
+      exportedAt: new Date().toISOString(),
+      extractedData,
+      flags,
+      checklist: checklist.map(({ id, label, completed, capturedAt, extractedData: itemData }) => ({
+        id,
+        label,
+        completed,
+        capturedAt,
+        extractedData: itemData,
+      })),
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${activeSchema.id}-session-${Date.now()}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const telemetry: TelemetrySnapshot = {
+    lastLatencyMs: lastResult?.latencyMs ?? null,
+    activeBackend: lastResult?.backend ?? 'none',
+    engineLabel: lastResult?.engine ?? 'Idle',
+    opfsCachedBytes: capability.cachedSizeBytes,
+    capabilityState: capability.state,
+    stepCount,
+    isOnline,
+    lastUpdatedAt: lastResult ? new Date().toISOString() : null,
+  };
+
+  return (
+    <div className="app-shell">
+      <header className="topbar">
+        <div className="brand">
+          <div className="brand-badge">
+            <ShieldCheck size={18} />
+          </div>
+          <div>
+            <div className="brand-title">Edge Field Assistant</div>
+            <div className="brand-sub">100% Local WebGPU + OPFS Multimodal SDK</div>
+          </div>
+        </div>
+
+        <div className="topbar-controls">
+          <select
+            className="select"
+            style={{ width: 'auto', minWidth: 220 }}
+            value={activeSchema.id}
+            onChange={(e) => handleSchemaSelect(e.target.value)}
+            aria-label="Select field workflow schema"
+          >
+            {schemas.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name} ({s.items.length} steps)
+              </option>
+            ))}
+          </select>
+
+          <button type="button" className="btn" onClick={() => setSchemaModalOpen(true)}>
+            <Plus size={15} /> New Custom Schema
+          </button>
+
+          <button type="button" className="btn" onClick={() => setTelemetryOpen(true)}>
+            <Activity size={15} /> Telemetry
+          </button>
+        </div>
+      </header>
+
+      <main className="main-container">
+        <FieldCaptureUI
+          schema={activeSchema}
+          checklist={checklist}
+          extractedData={extractedData}
+          flags={flags}
+          photos={photos}
+          capability={capability}
+          downloadProgress={downloadProgress}
+          downloadingModel={downloadingModel}
+          analyzingStep={analyzingStep}
+          lastResult={lastResult}
+          handsFreeVoice={handsFreeVoice}
+          onToggleHandsFreeVoice={() => setHandsFreeVoice((v) => !v)}
+          onDownloadModel={handleDownloadModel}
+          onDeleteModel={handleDeleteModel}
+          onEvaluateStep={handleEvaluateStep}
+          onResetSession={() => handleSchemaSelect(activeSchema.id)}
+          onExportSession={handleExportSession}
+        />
+      </main>
+
+      <SchemaBuilder
+        isOpen={schemaModalOpen}
+        activeSchema={activeSchema}
+        onClose={() => setSchemaModalOpen(false)}
+        onSaveSchema={handleSaveCustomSchema}
+      />
+
+      <TelemetryDrawer
+        isOpen={telemetryOpen}
+        telemetry={telemetry}
+        remoteEndpointUrl={remoteEndpointUrl}
+        onRemoteEndpointChange={(url) => {
+          setRemoteEndpointUrl(url);
+          routerRef.current?.setRemoteEndpoint(url.trim() || undefined);
+        }}
+        jsonState={{ schemaId: activeSchema.id, extractedData, flags, checklist }}
+        onClose={() => setTelemetryOpen(false)}
+      />
+    </div>
+  );
+}

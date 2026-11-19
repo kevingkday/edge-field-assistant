@@ -1,0 +1,33 @@
+{
+  "name": "@edge-field-assistant/core",
+  "version": "0.1.0",
+  "description": "Schema-driven, offline-first multimodal field assistant SDK powered by WebGPU, OPFS, and LiteRT-LM",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./worker": {
+      "types": "./dist/inferenceWorker.d.ts",
+      "import": "./dist/inferenceWorker.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "check": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@litert-lm/core": "^0.19.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.4"
+  }
+}

@@ -1,0 +1,52 @@
+{
+  "id": "twinflow-lead-intake",
+  "version": "1.0.0",
+  "name": "TwinFlow Field Lead Intake",
+  "description": "On-site B2B prospect qualification, equipment/workspace audit, and instant CRM lead capture.",
+  "domain": "crm_intake",
+  "persona": "B2B field sales engineer and CRM intake specialist",
+  "flagLabel": "Deal Blockers & Risks",
+  "accentColor": "#8b5cf6",
+  "items": [
+    {
+      "id": "storefront_signage",
+      "label": "Account Signage & Location Verification",
+      "category": "Account Identity",
+      "promptHint": "Snap storefront or reception signage and speak the primary contact name and role.",
+      "extractKeys": ["account_name", "primary_contact"],
+      "required": true
+    },
+    {
+      "id": "current_equipment",
+      "label": "Existing Equipment / Tech Stack Audit",
+      "category": "Discovery",
+      "promptHint": "Capture current hardware, POS, or machinery model plate to identify replacement fit.",
+      "extractKeys": ["incumbent_vendor", "hardware_model"],
+      "required": true
+    },
+    {
+      "id": "pain_points_volume",
+      "label": "Workflow Bottleneck & Monthly Volume",
+      "category": "Qualification",
+      "promptHint": "Speak the prospect's top pain point, team size, and monthly transaction/unit volume.",
+      "extractKeys": ["pain_point", "monthly_volume"],
+      "required": true
+    },
+    {
+      "id": "budget_timeline",
+      "label": "Budget Authority & Target Go-Live",
+      "category": "MEDDIC / BANT",
+      "promptHint": "Record decision maker status, estimated budget range, and target deployment month.",
+      "extractKeys": ["estimated_arr", "target_timeline"],
+      "required": true
+    },
+    {
+      "id": "next_step_commit",
+      "label": "Next Step & Follow-Up Commitment",
+      "category": "Closing",
+      "promptHint": "Snap business card or quote sheet and speak the agreed follow-up date and deliverable.",
+      "extractKeys": ["next_step", "followup_date"],
+      "required": true
+    }
+  ]
+}

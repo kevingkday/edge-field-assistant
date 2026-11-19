@@ -1,0 +1,17 @@
+{
+  "name": "edge-field-assistant",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Fast, Private, Offline Field Assistant SDK & PWA Showcase powered by WebGPU, OPFS, and LiteRT-LM",
+  "workspaces": [
+    "packages/*",
+    "demo-app"
+  ],
+  "scripts": {
+    "build": "npm run build --workspace=@edge-field-assistant/core && npm run build --workspace=demo-app",
+    "check": "npm run check --workspace=@edge-field-assistant/core && npm run check --workspace=demo-app",
+    "test": "npm run test --workspace=@edge-field-assistant/core",
+    "dev": "npm run dev --workspace=demo-app",
+    "sync-wasm": "node scripts/sync-wasm.mjs"
+  }
+}

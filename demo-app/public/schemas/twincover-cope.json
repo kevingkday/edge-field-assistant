@@ -1,0 +1,68 @@
+{
+  "id": "twincover-cope",
+  "version": "1.0.0",
+  "name": "TwinCover Commercial COPE",
+  "description": "Commercial property underwriting walk-through capturing Construction, Occupancy, Protection, and Exposures.",
+  "domain": "insurance",
+  "persona": "commercial insurance field underwriting copilot",
+  "flagLabel": "Underwriting Red Flags",
+  "accentColor": "#0ea5e9",
+  "items": [
+    {
+      "id": "exterior_elevations",
+      "label": "Exterior Elevations & Construction Class",
+      "category": "Construction",
+      "promptHint": "Snap front/side walls to confirm brick, masonry, steel, or wood frame and adjoining exposures.",
+      "extractKeys": ["construction_type", "exposures"],
+      "required": true
+    },
+    {
+      "id": "roof_surface",
+      "label": "Roof Surface, Age & Drainage",
+      "category": "Construction",
+      "promptHint": "Capture roof membrane/shingles, scuppers, or ask owner for roof replacement year.",
+      "extractKeys": ["roof_condition", "roof_year"],
+      "required": true
+    },
+    {
+      "id": "electrical_panel",
+      "label": "Main Electrical Panel & Amperage",
+      "category": "Protection / Systems",
+      "promptHint": "Open panel door; capture main breaker amperage (e.g. 200A) and manufacturer label.",
+      "extractKeys": ["electrical_service", "panel_manufacturer"],
+      "required": true
+    },
+    {
+      "id": "fire_protection",
+      "label": "Fire Protection & Sprinkler Riser",
+      "category": "Protection",
+      "promptHint": "Snap sprinkler riser gauge/tag, fire extinguishers, or ULC central-station fire alarm panel.",
+      "extractKeys": ["fire_protection", "sprinkler_tag_date"],
+      "required": true
+    },
+    {
+      "id": "hvac_mechanical",
+      "label": "HVAC, Heating & Plumbing",
+      "category": "Systems",
+      "promptHint": "Capture furnace/rooftop unit nameplate or mechanical room piping.",
+      "extractKeys": ["hvac_plumbing"],
+      "required": false
+    },
+    {
+      "id": "life_safety",
+      "label": "Life Safety, Exits & Security Controls",
+      "category": "Security & Life Safety",
+      "promptHint": "Snap illuminated exit signs, panic bars, deadbolts, CCTV, or burglar alarm keypad.",
+      "extractKeys": ["security_controls"],
+      "required": true
+    },
+    {
+      "id": "housekeeping_hazards",
+      "label": "Housekeeping, Occupancy & Peak Stock (TIV)",
+      "category": "Occupancy & Values",
+      "promptHint": "Snap main floor/stock & speak approximate square footage and peak inventory value ($).",
+      "extractKeys": ["business_operations", "total_insurable_value"],
+      "required": true
+    }
+  ]
+}
