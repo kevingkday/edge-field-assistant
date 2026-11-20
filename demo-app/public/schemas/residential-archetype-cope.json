@@ -1,0 +1,39 @@
+{
+    "id": "residential-archetype-cope",
+    "name": "Residential Archetype & Sizing (BC / North America)",
+    "description": "Classifies residential building archetypes from exterior photos and applies regional dimensional priors for underwriting.",
+    "systemPrompt": "You are a residential property insurance inspector in British Columbia. Identify the architectural archetype from the photo (e.g., Vancouver Special, Post-War Bungalow, 1970s Split-Level, 1990s Two-Storey Suburban, West Coast Contemporary, Character Craftsman) and infer standard regional dimensions based on typical building footprints for that style. Return valid JSON only matching the required schema.",
+    "items": [
+        {
+            "id": "front_elevation",
+            "label": "Front Elevation & Archetype Match",
+            "required": true,
+            "hint": "Capture full front facade including roofline, entry, and garage/carport."
+        },
+        {
+            "id": "roof_cladding",
+            "label": "Roof Geometry & Exterior Wall Finish",
+            "required": true,
+            "hint": "Identify roof pitch/material and main cladding (stucco, brick, vinyl, cedar, hardie)."
+        },
+        {
+            "id": "secondary_suite_or_addition",
+            "label": "Visible Additions, Basement Entry, or Garage Bays",
+            "required": false,
+            "hint": "Note ground-level suite indicators, attached garage bays, or rear additions."
+        }
+    ],
+    "outputFields": [
+        "matched_archetype",
+        "estimated_era",
+        "stories",
+        "typical_width_ft",
+        "typical_depth_ft",
+        "estimated_total_sqft",
+        "roof_style",
+        "exterior_wall_material",
+        "garage_bays",
+        "secondary_suite_likely",
+        "underwriting_notes"
+    ]
+}
