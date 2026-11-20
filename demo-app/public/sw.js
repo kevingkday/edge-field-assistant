@@ -1,4 +1,4 @@
-const CACHE_NAME = 'edge-field-assistant-v1';
+const CACHE_NAME = 'edge-field-assistant-v2';
 const PRECACHE_URLS = [
   '/',
   '/index.html',
@@ -29,6 +29,19 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
   const url = new URL(event.request.url);
+
+  // Never intercept or cache multi-GB model weights or Hugging Face CDN requests;
+  // weights stream directly into OPFS on the client.
+  if (
+    url.pathname.endsWith('.litertlm') ||
+    url.hostname === 'huggingface.co' ||
+    url.hostname.endsWith('.huggingface.co') ||
+    url.hostname === 'hf.co' ||
+    url.hostname.endsWith('.hf.co')
+  ) {
+    return;
+  }
+
   if (url.origin !== self.location.origin) return;
 
   event.respondWith(

@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Activity, Copy, Check, Wifi, WifiOff, X } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { Activity, Copy, Check, HardDrive, Trash2, Wifi, WifiOff, X } from 'lucide-react';
 import { formatBytes, type TelemetrySnapshot } from '@edge-field-assistant/core';
 
 interface TelemetryDrawerProps {
@@ -7,6 +7,9 @@ interface TelemetryDrawerProps {
   telemetry: TelemetrySnapshot;
   remoteEndpointUrl: string;
   onRemoteEndpointChange: (url: string) => void;
+  forceLocalWebGpu: boolean;
+  onToggleForceLocalWebGpu: (force: boolean) => void;
+  onDeleteModel: () => Promise<void> | void;
   jsonState: unknown;
   onClose: () => void;
 }
@@ -16,10 +19,38 @@ export const TelemetryDrawer: React.FC<TelemetryDrawerProps> = ({
   telemetry,
   remoteEndpointUrl,
   onRemoteEndpointChange,
+  forceLocalWebGpu,
+  onToggleForceLocalWebGpu,
+  onDeleteModel,
   jsonState,
   onClose,
 }) => {
   const [copied, setCopied] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [storageEstimate, setStorageEstimate] = useState<{
+    usage: number;
+    quota: number;
+  } | null>(null);
+
+  const refreshStorageEstimate = async () => {
+    try {
+      if (typeof navigator !== 'undefined' && navigator.storage?.estimate) {
+        const est = await navigator.storage.estimate();
+        setStorageEstimate({
+          usage: est.usage ?? 0,
+          quota: est.quota ?? 0,
+        });
+      }
+    } catch {
+      // ignore storage estimate errors
+    }
+  };
+
+  useEffect(() => {
+    if (isOpen) {
+      refreshStorageEstimate();
+    }
+  }, [isOpen, telemetry.opfsCachedBytes]);
 
   if (!isOpen) return null;
 
@@ -32,6 +63,16 @@ export const TelemetryDrawer: React.FC<TelemetryDrawerProps> = ({
       setTimeout(() => setCopied(false), 1500);
     } catch {
       // ignore clipboard errors
+    }
+  };
+
+  const handleDeleteModel = async () => {
+    setDeleting(true);
+    try {
+      await onDeleteModel();
+      await refreshStorageEstimate();
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -77,6 +118,56 @@ export const TelemetryDrawer: React.FC<TelemetryDrawerProps> = ({
               {telemetry.isOnline ? 'Online' : 'Offline'} · {telemetry.stepCount} turns
             </div>
           </div>
+        </div>
+
+        <div className="card" style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600 }}>
+              <HardDrive size={14} color="#38bdf8" />
+              Origin Storage (OPFS Estimate)
+            </div>
+            <button
+              type="button"
+              className="btn btn-danger"
+              style={{ padding: '5px 10px', fontSize: 12 }}
+              onClick={handleDeleteModel}
+              disabled={deleting || telemetry.opfsCachedBytes === 0}
+            >
+              <Trash2 size={13} />
+              {deleting ? 'Deleting...' : 'Delete Cached Model'}
+            </button>
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+            {storageEstimate
+              ? `${formatBytes(storageEstimate.usage)} used of ${formatBytes(storageEstimate.quota)} quota`
+              : 'Storage estimate unavailable in this browser.'}
+          </div>
+
+          <label
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 10,
+              paddingTop: 8,
+              borderTop: '1px solid var(--border)',
+              cursor: 'pointer',
+              fontSize: 12,
+            }}
+          >
+            <div>
+              <div style={{ fontWeight: 600 }}>Force Local WebGPU</div>
+              <div style={{ color: 'var(--text-muted)', fontSize: 11 }}>
+                Bypass navigator.deviceMemory &lt; 4 GB cap
+              </div>
+            </div>
+            <input
+              type="checkbox"
+              checked={forceLocalWebGpu}
+              onChange={(e) => onToggleForceLocalWebGpu(e.target.checked)}
+              style={{ width: 16, height: 16, accentColor: 'var(--accent)' }}
+            />
+          </label>
         </div>
 
         <div>

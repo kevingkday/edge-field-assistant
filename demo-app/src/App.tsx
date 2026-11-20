@@ -72,6 +72,7 @@ export default function App() {
   const [handsFreeVoice, setHandsFreeVoice] = useState(true);
 
   const [remoteEndpointUrl, setRemoteEndpointUrl] = useState('');
+  const [forceLocalWebGpu, setForceLocalWebGpu] = useState(false);
   const [stepCount, setStepCount] = useState(0);
   const [isOnline, setIsOnline] = useState(() =>
     typeof navigator !== 'undefined' ? navigator.onLine : true
@@ -204,7 +205,7 @@ export default function App() {
     setDownloadProgress({ percent: 0, receivedBytes: 0, totalBytes: 0 });
     try {
       await downloadModelToOpfs((prog) => setDownloadProgress(prog));
-      const cap = await detectDeviceCapability();
+      const cap = await detectDeviceCapability({}, { forceLocalWebGpu });
       setCapability(cap);
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Model download failed');
@@ -219,13 +220,21 @@ export default function App() {
     routerRef.current = new FieldAssistantRouter({
       wasmBaseUrl: '/wasm/',
       remoteEndpointUrl: remoteEndpointUrl || undefined,
+      forceLocalWebGpu,
       createWorker: () =>
         new Worker(
           new URL('@edge-field-assistant/core/worker', import.meta.url),
           { type: 'module' }
         ),
     });
-    const cap = await detectDeviceCapability();
+    const cap = await detectDeviceCapability({}, { forceLocalWebGpu });
+    setCapability(cap);
+  };
+
+  const handleToggleForceLocalWebGpu = async (force: boolean) => {
+    setForceLocalWebGpu(force);
+    routerRef.current?.setForceLocalWebGpu(force);
+    const cap = await detectDeviceCapability({}, { forceLocalWebGpu: force });
     setCapability(cap);
   };
 
@@ -380,6 +389,9 @@ export default function App() {
           setRemoteEndpointUrl(url);
           routerRef.current?.setRemoteEndpoint(url.trim() || undefined);
         }}
+        forceLocalWebGpu={forceLocalWebGpu}
+        onToggleForceLocalWebGpu={handleToggleForceLocalWebGpu}
+        onDeleteModel={handleDeleteModel}
         jsonState={{ schemaId: activeSchema.id, extractedData, flags, checklist }}
         onClose={() => setTelemetryOpen(false)}
       />

@@ -16,6 +16,8 @@ export interface FallbackRouterOptions {
   remoteEndpointUrl?: string;
   /** Optional headers for remote endpoint calls (e.g. Authorization). */
   remoteHeaders?: Record<string, string>;
+  /** Bypass navigator.deviceMemory threshold when WebGPU + OPFS are present. */
+  forceLocalWebGpu?: boolean;
   /** Custom worker factory for bundlers (Vite, Webpack) that require explicit `new Worker(new URL(...))`. */
   createWorker?: () => Worker;
 }
@@ -35,6 +37,7 @@ export class FieldAssistantRouter {
   private readonly modelConfig: ModelConfig;
   private remoteEndpointUrl?: string;
   private remoteHeaders: Record<string, string>;
+  private forceLocalWebGpu: boolean;
   private readonly createWorker: () => Worker;
 
   private worker: Worker | null = null;
@@ -46,12 +49,17 @@ export class FieldAssistantRouter {
     this.modelConfig = { ...DEFAULT_MODEL_CONFIG, ...options.modelConfig };
     this.remoteEndpointUrl = options.remoteEndpointUrl;
     this.remoteHeaders = options.remoteHeaders || {};
+    this.forceLocalWebGpu = Boolean(options.forceLocalWebGpu);
     this.createWorker =
       options.createWorker ||
       (() =>
         new Worker(new URL('./inferenceWorker.js', import.meta.url), {
           type: 'module',
         }));
+  }
+
+  setForceLocalWebGpu(force: boolean): void {
+    this.forceLocalWebGpu = force;
   }
 
   setRemoteEndpoint(url?: string, headers?: Record<string, string>): void {
@@ -62,7 +70,9 @@ export class FieldAssistantRouter {
   }
 
   async getCapability(): Promise<DeviceCapability> {
-    return detectDeviceCapability(this.modelConfig);
+    return detectDeviceCapability(this.modelConfig, {
+      forceLocalWebGpu: this.forceLocalWebGpu,
+    });
   }
 
   private ensureWorker(): Worker {

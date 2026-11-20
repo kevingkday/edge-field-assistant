@@ -5,9 +5,9 @@ import type {
 } from './types.js';
 
 export const DEFAULT_MODEL_CONFIG: ModelConfig = {
-  filename: 'gemma-4-E2B-it-web.litertlm',
+  filename: 'gemma-4-E2B-it-gpu.litertlm',
   downloadUrl:
-    'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it-web.litertlm',
+    'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it-gpu.litertlm',
   minValidBytes: 50 * 1024 * 1024,
   minMemoryGb: 4,
 };
@@ -24,7 +24,8 @@ export interface HardwareSupportResult {
  * Checks whether the current browser exposes WebGPU, OPFS, and sufficient device RAM.
  */
 export async function checkWebGpuAndOpfsSupport(
-  minMemoryGb = DEFAULT_MODEL_CONFIG.minMemoryGb
+  minMemoryGb = DEFAULT_MODEL_CONFIG.minMemoryGb,
+  forceLocalWebGpu = false
 ): Promise<HardwareSupportResult> {
   const hasOpfs =
     typeof navigator !== 'undefined' &&
@@ -53,7 +54,7 @@ export async function checkWebGpuAndOpfsSupport(
     };
   }
 
-  if (deviceMemoryGb !== null && deviceMemoryGb < minMemoryGb) {
+  if (!forceLocalWebGpu && deviceMemoryGb !== null && deviceMemoryGb < minMemoryGb) {
     return {
       supported: false,
       hasWebGpu,
@@ -123,10 +124,14 @@ export async function isModelCachedInOpfs(
  *   3. 'opfs_cached'       -> Model cached in OPFS; run 100% locally offline via WebGPU
  */
 export async function detectDeviceCapability(
-  config: Partial<ModelConfig> = {}
+  config: Partial<ModelConfig> = {},
+  options: { forceLocalWebGpu?: boolean } = {}
 ): Promise<DeviceCapability> {
   const merged = { ...DEFAULT_MODEL_CONFIG, ...config };
-  const hw = await checkWebGpuAndOpfsSupport(merged.minMemoryGb);
+  const hw = await checkWebGpuAndOpfsSupport(
+    merged.minMemoryGb,
+    Boolean(options.forceLocalWebGpu)
+  );
 
   if (!hw.supported) {
     return {

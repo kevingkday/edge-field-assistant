@@ -51,15 +51,25 @@ async function getOrCreateEngine(
     const fileHandle = await root.getFileHandle(modelFilename, { create: false });
     const modelFile = await fileHandle.getFile();
 
-    engineInstance = await Engine.create({
-      model: modelFile,
-      backend: Backend.GPU,
-      visionBackend: Backend.GPU,
-      mainExecutorSettings: {
-        maxNumTokens,
-        maxNumImages: 1,
-      },
-    });
+    try {
+      engineInstance = await Engine.create({
+        model: modelFile,
+        backend: Backend.GPU,
+        visionBackend: Backend.GPU,
+        mainExecutorSettings: {
+          maxNumTokens,
+          maxNumImages: 1,
+        },
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (/vision|image|modality|signature|encoder/i.test(msg)) {
+        throw new Error(
+          `Loaded model "${modelFilename}" lacks GPU vision support (${msg}). Clear the OPFS cache and download gemma-4-E2B-it-gpu.litertlm.`
+        );
+      }
+      throw err;
+    }
     return engineInstance;
   })();
 
@@ -147,7 +157,11 @@ workerScope.onmessage = async (event: MessageEvent<WorkerRequest>) => {
 
       workerScope.postMessage({ requestId, ok: true, result });
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'On-device WebGPU inference failed';
+      const rawMessage = err instanceof Error ? err.message : 'On-device WebGPU inference failed';
+      const message =
+        payload.imageBuffer && /vision|image|modality|unsupported/i.test(rawMessage)
+          ? `Vision inference failed (${rawMessage}). Ensure the vision-capable gemma-4-E2B-it-gpu.litertlm bundle is cached in OPFS.`
+          : rawMessage;
       workerScope.postMessage({ requestId, ok: false, error: message });
     } finally {
       if (conversation && typeof conversation.delete === 'function') {
