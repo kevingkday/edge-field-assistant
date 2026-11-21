@@ -19,9 +19,9 @@ if (!sourceDir) {
 }
 
 mkdirSync(targetDir, { recursive: true });
-const files = readdirSync(sourceDir);
+const files = readdirSync(sourceDir).filter((file) => !file.includes('asyncify'));
 for (const file of files) {
   cpSync(join(sourceDir, file), join(targetDir, file), { force: true });
 }
 
-console.log(`Synced ${files.length} LiteRT-LM WASM assets to demo-app/public/wasm/`);
+console.log(`Synced ${files.length} LiteRT-LM WASM assets (<25 MiB) to demo-app/public/wasm/`);
