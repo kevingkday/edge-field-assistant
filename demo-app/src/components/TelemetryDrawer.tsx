@@ -7,6 +7,8 @@ interface TelemetryDrawerProps {
   telemetry: TelemetrySnapshot;
   remoteEndpointUrl: string;
   onRemoteEndpointChange: (url: string) => void;
+  adminToken: string;
+  onAdminTokenChange: (token: string) => void;
   forceLocalWebGpu: boolean;
   onToggleForceLocalWebGpu: (force: boolean) => void;
   onDeleteModel: () => Promise<void> | void;
@@ -19,6 +21,8 @@ export const TelemetryDrawer: React.FC<TelemetryDrawerProps> = ({
   telemetry,
   remoteEndpointUrl,
   onRemoteEndpointChange,
+  adminToken,
+  onAdminTokenChange,
   forceLocalWebGpu,
   onToggleForceLocalWebGpu,
   onDeleteModel,
@@ -179,6 +183,19 @@ export const TelemetryDrawer: React.FC<TelemetryDrawerProps> = ({
             placeholder="https://your-micronode.example.com/api/walkthrough/evaluate"
             value={remoteEndpointUrl}
             onChange={(e) => onRemoteEndpointChange(e.target.value)}
+          />
+        </div>
+
+        <div>
+          <label style={{ fontSize: 12, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>
+            Admin Sync Token (Optional Bearer for /api/schemas)
+          </label>
+          <input
+            type="password"
+            className="input"
+            placeholder="Enter SCHEMA_ADMIN_TOKEN if configured on Cloudflare"
+            value={adminToken}
+            onChange={(e) => onAdminTokenChange(e.target.value)}
           />
         </div>
 

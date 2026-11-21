@@ -1,0 +1,19 @@
+name = "edge-field-assistant"
+compatibility_date = "2025-05-01"
+pages_build_output_dir = "dist"
+
+# Optional D1 Database binding for persistent cross-device custom schemas.
+# Create via: npx wrangler d1 create edge-field-assistant-schemas
+# Apply migration: npx wrangler d1 migrations apply edge-field-assistant-schemas --remote
+#
+# [[d1_databases]]
+# binding = "SCHEMAS_DB"
+# database_name = "edge-field-assistant-schemas"
+# database_id = "YOUR_D1_DATABASE_ID"
+
+# Optional Workers KV fallback binding (used if SCHEMAS_DB is not bound).
+# Create via: npx wrangler kv namespace create SCHEMAS_KV
+#
+# [[kv_namespaces]]
+# binding = "SCHEMAS_KV"
+# id = "YOUR_KV_NAMESPACE_ID"

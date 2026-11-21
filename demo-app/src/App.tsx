@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Activity, Plus, ShieldCheck } from 'lucide-react';
+import { Activity, Cloud, CloudOff, Lock, Plus, ShieldCheck } from 'lucide-react';
 import {
   FieldAssistantRouter,
   createChecklistFromSchema,
@@ -18,8 +18,14 @@ import {
 import { FieldCaptureUI } from './components/FieldCaptureUI';
 import { SchemaBuilder } from './components/SchemaBuilder';
 import { TelemetryDrawer } from './components/TelemetryDrawer';
-
-const CUSTOM_SCHEMAS_STORAGE_KEY = 'edge_field_assistant_custom_schemas_v1';
+import {
+  loadAdminToken,
+  loadAndSyncSchemas,
+  persistSchema,
+  removeCustomSchema,
+  saveAdminToken,
+  type SchemaSyncStatus,
+} from './utils/schemaSync';
 
 const FALLBACK_DEFAULT_SCHEMA: FieldAppSchema = {
   id: 'twincover-cope',
@@ -72,6 +78,8 @@ export default function App() {
   const [handsFreeVoice, setHandsFreeVoice] = useState(true);
 
   const [remoteEndpointUrl, setRemoteEndpointUrl] = useState('');
+  const [adminToken, setAdminToken] = useState(() => loadAdminToken());
+  const [syncStatus, setSyncStatus] = useState<SchemaSyncStatus>('idle');
   const [forceLocalWebGpu, setForceLocalWebGpu] = useState(false);
   const [stepCount, setStepCount] = useState(0);
   const [isOnline, setIsOnline] = useState(() =>
@@ -93,50 +101,16 @@ export default function App() {
     });
   }
 
-  // Load built-in schemas from /schemas/index.json + custom schemas from localStorage
+  // Load built-in schemas + localStorage cache + Cloudflare D1/KV /api/schemas
   useEffect(() => {
-    const loadAllSchemas = async () => {
-      const loaded: FieldAppSchema[] = [];
-      try {
-        const idxResp = await fetch('/schemas/index.json');
-        if (idxResp.ok) {
-          const files = (await idxResp.json()) as string[];
-          const fetched = await Promise.all(
-            files.map(async (file) => {
-              const r = await fetch(`/schemas/${file}`);
-              return r.ok ? ((await r.json()) as FieldAppSchema) : null;
-            })
-          );
-          for (const s of fetched) {
-            if (s) loaded.push(s);
-          }
-        }
-      } catch {
-        // offline fallback uses FALLBACK_DEFAULT_SCHEMA
-      }
-
-      try {
-        const rawCustom = localStorage.getItem(CUSTOM_SCHEMAS_STORAGE_KEY);
-        if (rawCustom) {
-          const customList = JSON.parse(rawCustom) as FieldAppSchema[];
-          for (const c of customList) {
-            if (!loaded.some((s) => s.id === c.id)) {
-              loaded.push(c);
-            }
-          }
-        }
-      } catch {
-        // ignore storage parse error
-      }
-
+    loadAndSyncSchemas().then(({ schemas: loaded, syncStatus: status }) => {
+      setSyncStatus(status);
       if (loaded.length > 0) {
         setSchemas(loaded);
         setActiveSchemaId(loaded[0].id);
         setChecklist(createChecklistFromSchema(loaded[0]));
       }
-    };
-
-    loadAllSchemas();
+    });
   }, []);
 
   // Probe hardware capability & listen to online/offline events
@@ -165,26 +139,38 @@ export default function App() {
     setLastResult(null);
   };
 
-  const handleSaveCustomSchema = (newSchema: FieldAppSchema) => {
-    setSchemas((prev) => {
-      const filtered = prev.filter((s) => s.id !== newSchema.id);
-      const next = [...filtered, newSchema];
-      try {
-        const customOnly = next.filter(
-          (s) => !['twincover-cope', 'oceanfalls-facility', 'twinflow-lead-intake'].includes(s.id)
-        );
-        localStorage.setItem(CUSTOM_SCHEMAS_STORAGE_KEY, JSON.stringify(customOnly));
-      } catch {
-        // ignore storage quota errors
-      }
-      return next;
-    });
+  const handleSaveCustomSchema = async (newSchema: FieldAppSchema) => {
+    const { schemas: nextSchemas, syncStatus: nextStatus } = await persistSchema(
+      newSchema,
+      schemas,
+      adminToken
+    );
+    setSchemas(nextSchemas);
+    setSyncStatus(nextStatus);
     setActiveSchemaId(newSchema.id);
     setChecklist(createChecklistFromSchema(newSchema));
     setExtractedData({});
     setFlags([]);
     setPhotos([]);
     setLastResult(null);
+  };
+
+  const handleDeleteCustomSchema = async (schemaId: string) => {
+    const { schemas: nextSchemas, syncStatus: nextStatus } = await removeCustomSchema(
+      schemaId,
+      schemas,
+      adminToken
+    );
+    setSchemas(nextSchemas);
+    setSyncStatus(nextStatus);
+    if (activeSchemaId === schemaId && nextSchemas.length > 0) {
+      setActiveSchemaId(nextSchemas[0].id);
+      setChecklist(createChecklistFromSchema(nextSchemas[0]));
+      setExtractedData({});
+      setFlags([]);
+      setPhotos([]);
+      setLastResult(null);
+    }
   };
 
   const speakFeedback = (text: string, force = false) => {
@@ -346,6 +332,22 @@ export default function App() {
             <Plus size={15} /> New Custom Schema
           </button>
 
+          {syncStatus === 'synced' && (
+            <span className="pill pill-green" title="Schemas synced with Cloudflare D1/KV">
+              <Cloud size={13} /> Synced to Cloudflare
+            </span>
+          )}
+          {syncStatus === 'offline_local' && (
+            <span className="pill pill-amber" title="Offline or local-only storage">
+              <CloudOff size={13} /> Saved Locally (Offline)
+            </span>
+          )}
+          {syncStatus === 'auth_required' && (
+            <span className="pill pill-red" title="Set Admin Sync Token in Telemetry">
+              <Lock size={13} /> Auth Token Required
+            </span>
+          )}
+
           <button type="button" className="btn" onClick={() => setTelemetryOpen(true)}>
             <Activity size={15} /> Telemetry
           </button>
@@ -377,8 +379,11 @@ export default function App() {
       <SchemaBuilder
         isOpen={schemaModalOpen}
         activeSchema={activeSchema}
+        allSchemas={schemas}
+        syncStatus={syncStatus}
         onClose={() => setSchemaModalOpen(false)}
         onSaveSchema={handleSaveCustomSchema}
+        onDeleteSchema={handleDeleteCustomSchema}
       />
 
       <TelemetryDrawer
@@ -388,6 +393,11 @@ export default function App() {
         onRemoteEndpointChange={(url) => {
           setRemoteEndpointUrl(url);
           routerRef.current?.setRemoteEndpoint(url.trim() || undefined);
+        }}
+        adminToken={adminToken}
+        onAdminTokenChange={(token) => {
+          setAdminToken(token);
+          saveAdminToken(token);
         }}
         forceLocalWebGpu={forceLocalWebGpu}
         onToggleForceLocalWebGpu={handleToggleForceLocalWebGpu}

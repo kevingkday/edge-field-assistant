@@ -1,12 +1,16 @@
 import React, { useState } from 'react';
-import { Download, Plus, Trash2, Upload, X } from 'lucide-react';
+import { Cloud, CloudOff, Download, Edit3, Lock, Plus, Trash2, Upload, X } from 'lucide-react';
 import type { FieldAppSchema, FieldSchemaItem } from '@edge-field-assistant/core';
+import { BUILT_IN_SCHEMA_IDS, type SchemaSyncStatus } from '../utils/schemaSync';
 
 interface SchemaBuilderProps {
   isOpen: boolean;
   activeSchema: FieldAppSchema;
+  allSchemas: FieldAppSchema[];
+  syncStatus: SchemaSyncStatus;
   onClose: () => void;
-  onSaveSchema: (schema: FieldAppSchema) => void;
+  onSaveSchema: (schema: FieldAppSchema) => Promise<void> | void;
+  onDeleteSchema: (schemaId: string) => Promise<void> | void;
 }
 
 const createEmptyItem = (index: number): FieldSchemaItem => ({
@@ -21,9 +25,13 @@ const createEmptyItem = (index: number): FieldSchemaItem => ({
 export const SchemaBuilder: React.FC<SchemaBuilderProps> = ({
   isOpen,
   activeSchema,
+  allSchemas,
+  syncStatus,
   onClose,
   onSaveSchema,
+  onDeleteSchema,
 }) => {
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [domain, setDomain] = useState('custom');
   const [persona, setPersona] = useState('field inspection and data extraction copilot');
@@ -31,10 +39,40 @@ export const SchemaBuilder: React.FC<SchemaBuilderProps> = ({
   const [flagLabel, setFlagLabel] = useState('Red Flags');
   const [items, setItems] = useState<FieldSchemaItem[]>([createEmptyItem(0)]);
   const [jsonInput, setJsonInput] = useState('');
-  const [mode, setMode] = useState<'form' | 'import'>('form');
+  const [mode, setMode] = useState<'form' | 'import' | 'manage'>('form');
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   if (!isOpen) return null;
+
+  const customSchemas = allSchemas.filter((s) => !BUILT_IN_SCHEMA_IDS.has(s.id));
+
+  const resetForm = () => {
+    setEditingId(null);
+    setName('');
+    setDomain('custom');
+    setPersona('field inspection and data extraction copilot');
+    setDescription('');
+    setFlagLabel('Red Flags');
+    setItems([createEmptyItem(0)]);
+    setError(null);
+  };
+
+  const loadSchemaIntoForm = (schema: FieldAppSchema) => {
+    setEditingId(schema.id);
+    setName(schema.name);
+    setDomain(schema.domain || 'custom');
+    setPersona(schema.persona || 'field inspection copilot');
+    setDescription(schema.description || '');
+    setFlagLabel(schema.flagLabel || 'Red Flags');
+    setItems(
+      schema.items.length > 0
+        ? schema.items.map((item) => ({ ...item }))
+        : [createEmptyItem(0)]
+    );
+    setMode('form');
+    setError(null);
+  };
 
   const handleAddItem = () => {
     setItems((prev) => [...prev, createEmptyItem(prev.length)]);
@@ -48,7 +86,7 @@ export const SchemaBuilder: React.FC<SchemaBuilderProps> = ({
     setItems((prev) => prev.map((item, i) => (i === idx ? { ...item, ...patch } : item)));
   };
 
-  const handleCreateSubmit = (e: React.FormEvent) => {
+  const handleCreateSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 
@@ -63,14 +101,14 @@ export const SchemaBuilder: React.FC<SchemaBuilderProps> = ({
       return;
     }
 
-    const id = name
+    const generatedId = name
       .trim()
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/^-|-$/g, '');
 
     const schema: FieldAppSchema = {
-      id: id || `custom-${Date.now()}`,
+      id: editingId || generatedId || `custom-${Date.now()}`,
       version: '1.0.0',
       name: name.trim(),
       description: description.trim() || `Custom field workflow for ${name.trim()}`,
@@ -89,21 +127,30 @@ export const SchemaBuilder: React.FC<SchemaBuilderProps> = ({
       })),
     };
 
-    onSaveSchema(schema);
-    onClose();
+    setSaving(true);
+    try {
+      await onSaveSchema(schema);
+      resetForm();
+      onClose();
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const handleImportJson = () => {
+  const handleImportJson = async () => {
     setError(null);
     try {
       const parsed = JSON.parse(jsonInput) as FieldAppSchema;
       if (!parsed.id || !parsed.name || !Array.isArray(parsed.items) || parsed.items.length === 0) {
         throw new Error('Schema JSON must include "id", "name", and a non-empty "items" array.');
       }
-      onSaveSchema(parsed);
+      setSaving(true);
+      await onSaveSchema(parsed);
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Invalid JSON schema.');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -131,8 +178,27 @@ export const SchemaBuilder: React.FC<SchemaBuilderProps> = ({
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal-panel" onClick={(e) => e.stopPropagation()}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-          <h2 style={{ margin: 0, fontSize: 18 }}>Schema Builder & Import/Export</h2>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, gap: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <h2 style={{ margin: 0, fontSize: 18 }}>
+              {editingId ? `Edit "${name || editingId}"` : 'Schema Builder & Cloud Sync'}
+            </h2>
+            {syncStatus === 'synced' && (
+              <span className="pill pill-green" style={{ fontSize: 11 }}>
+                <Cloud size={12} /> Synced to Cloudflare
+              </span>
+            )}
+            {syncStatus === 'offline_local' && (
+              <span className="pill pill-amber" style={{ fontSize: 11 }}>
+                <CloudOff size={12} /> Saved Locally (Offline)
+              </span>
+            )}
+            {syncStatus === 'auth_required' && (
+              <span className="pill pill-red" style={{ fontSize: 11 }}>
+                <Lock size={12} /> Auth Token Required
+              </span>
+            )}
+          </div>
           <button type="button" className="btn btn-ghost" onClick={onClose}>
             <X size={18} />
           </button>
@@ -142,9 +208,19 @@ export const SchemaBuilder: React.FC<SchemaBuilderProps> = ({
           <button
             type="button"
             className={mode === 'form' ? 'btn btn-primary' : 'btn'}
-            onClick={() => setMode('form')}
+            onClick={() => {
+              if (mode !== 'form') resetForm();
+              setMode('form');
+            }}
           >
             + Visual Builder
+          </button>
+          <button
+            type="button"
+            className={mode === 'manage' ? 'btn btn-primary' : 'btn'}
+            onClick={() => setMode('manage')}
+          >
+            Manage Custom ({customSchemas.length})
           </button>
           <button
             type="button"
@@ -168,7 +244,52 @@ export const SchemaBuilder: React.FC<SchemaBuilderProps> = ({
           </div>
         )}
 
-        {mode === 'form' ? (
+        {mode === 'manage' ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {customSchemas.length === 0 ? (
+              <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: '16px 0' }}>
+                No custom schemas yet. Create one in the Visual Builder or import a JSON schema.
+              </div>
+            ) : (
+              customSchemas.map((schema) => (
+                <div
+                  key={schema.id}
+                  className="card"
+                  style={{
+                    padding: 12,
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    gap: 12,
+                  }}
+                >
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: 14 }}>{schema.name}</div>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                      {schema.id} · {schema.items.length} items · {schema.domain}
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button
+                      type="button"
+                      className="btn"
+                      onClick={() => loadSchemaIntoForm(schema)}
+                    >
+                      <Edit3 size={14} /> Edit
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-danger"
+                      onClick={() => onDeleteSchema(schema.id)}
+                    >
+                      <Trash2 size={14} /> Delete
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        ) : mode === 'form' ? (
           <form onSubmit={handleCreateSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
               <div>
@@ -271,11 +392,16 @@ export const SchemaBuilder: React.FC<SchemaBuilderProps> = ({
             ))}
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 8 }}>
+              {editingId && (
+                <button type="button" className="btn" onClick={resetForm}>
+                  New Blank
+                </button>
+              )}
               <button type="button" className="btn" onClick={onClose}>
                 Cancel
               </button>
-              <button type="submit" className="btn btn-primary">
-                Save & Activate Schema
+              <button type="submit" className="btn btn-primary" disabled={saving}>
+                {saving ? 'Saving...' : editingId ? 'Update & Sync Schema' : 'Save & Activate Schema'}
               </button>
             </div>
           </form>
@@ -292,8 +418,8 @@ export const SchemaBuilder: React.FC<SchemaBuilderProps> = ({
               <button type="button" className="btn" onClick={onClose}>
                 Cancel
               </button>
-              <button type="button" className="btn btn-primary" onClick={handleImportJson}>
-                Import & Activate
+              <button type="button" className="btn btn-primary" onClick={handleImportJson} disabled={saving}>
+                {saving ? 'Importing...' : 'Import & Activate'}
               </button>
             </div>
           </div>
