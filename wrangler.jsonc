@@ -7,24 +7,12 @@
     "directory": "./demo-app/dist",
     "binding": "ASSETS",
     "not_found_handling": "single-page-application"
-  }
-  // Optional D1 Database binding for persistent cross-device custom schemas.
-  // Create via: npx wrangler d1 create edge-field-assistant-schemas
-  // Apply migration: npx wrangler d1 execute edge-field-assistant-schemas --remote --file=demo-app/migrations/0001_create_schemas.sql
-  //
-  // "d1_databases": [
-  //   {
-  //     "binding": "SCHEMAS_DB",
-  //     "database_name": "edge-field-assistant-schemas",
-  //     "database_id": "YOUR_D1_DATABASE_ID"
-  //   }
-  // ],
-  //
-  // Optional Workers KV fallback binding (used if SCHEMAS_DB is not bound).
-  // "kv_namespaces": [
-  //   {
-  //     "binding": "SCHEMAS_KV",
-  //     "id": "YOUR_KV_NAMESPACE_ID"
-  //   }
-  // ]
+  },
+  "d1_databases": [
+    {
+      "binding": "SCHEMAS_DB",
+      "database_name": "edge-field-assistant-schemas",
+      "database_id": "25ec2486-d12e-4e11-80c4-408038f37e27"
+    }
+  ]
 }
