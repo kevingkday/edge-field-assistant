@@ -34,7 +34,7 @@ interface PendingRequest {
  */
 export class FieldAssistantRouter {
   private readonly wasmBaseUrl: string;
-  private readonly modelConfig: ModelConfig;
+  private modelConfig: ModelConfig;
   private remoteEndpointUrl?: string;
   private remoteHeaders: Record<string, string>;
   private forceLocalWebGpu: boolean;
@@ -60,6 +60,16 @@ export class FieldAssistantRouter {
 
   setForceLocalWebGpu(force: boolean): void {
     this.forceLocalWebGpu = force;
+  }
+
+  setModelConfig(config: Partial<ModelConfig>): void {
+    const next = { ...DEFAULT_MODEL_CONFIG, ...config };
+    if (next.filename !== this.modelConfig.filename && this.worker) {
+      this.worker.terminate();
+      this.worker = null;
+      this.pending.clear();
+    }
+    this.modelConfig = next;
   }
 
   setRemoteEndpoint(url?: string, headers?: Record<string, string>): void {

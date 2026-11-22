@@ -20,6 +20,7 @@ import {
   formatBytes,
   type CapturedMediaEntry,
   type ChecklistItemState,
+  type CustomModelEntry,
   type DeviceCapability,
   type FieldAppSchema,
   type ModelDownloadProgress,
@@ -50,6 +51,9 @@ interface FieldCaptureUIProps {
   lastResult: StepEvaluationResult | null;
   handsFreeVoice: boolean;
   onToggleHandsFreeVoice: () => void;
+  availableModels: CustomModelEntry[];
+  activeModelId: string;
+  onSelectModel: (modelId: string) => void;
   onDownloadModel: () => void;
   onDeleteModel: () => void;
   onEvaluateStep: (frameBlob: Blob | null, transcript: string) => Promise<void>;
@@ -70,6 +74,9 @@ export const FieldCaptureUI: React.FC<FieldCaptureUIProps> = ({
   lastResult,
   handsFreeVoice,
   onToggleHandsFreeVoice,
+  availableModels,
+  activeModelId,
+  onSelectModel,
   onDownloadModel,
   onDeleteModel,
   onEvaluateStep,
@@ -179,7 +186,21 @@ export const FieldCaptureUI: React.FC<FieldCaptureUIProps> = ({
           )}
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
+          <select
+            className="select"
+            style={{ width: 'auto', minWidth: 190, padding: '7px 10px', fontSize: 12 }}
+            value={activeModelId}
+            onChange={(e) => onSelectModel(e.target.value)}
+            aria-label="Select OPFS model"
+          >
+            {availableModels.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.name}{m.size_mb ? ` (${m.size_mb} MB)` : ''}
+              </option>
+            ))}
+          </select>
+
           {capability.state === 'ready_to_download' && (
             <button
               type="button"
@@ -190,7 +211,7 @@ export const FieldCaptureUI: React.FC<FieldCaptureUIProps> = ({
               <Download size={15} />
               {downloadingModel && downloadProgress
                 ? `Streaming to OPFS (${downloadProgress.percent}%)`
-                : 'Download Gemma 4 E2B to OPFS'}
+                : 'Download to OPFS'}
             </button>
           )}
           {capability.state === 'opfs_cached' && (

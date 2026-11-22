@@ -305,3 +305,45 @@ select {
   white-space: pre-wrap;
   word-break: break-word;
 }
+
+.studio-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+}
+
+@media (min-width: 960px) {
+  .studio-grid {
+    grid-template-columns: 1.35fr 0.85fr;
+    align-items: start;
+  }
+}
+
+.field-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+.dropzone {
+  border: 1px dashed rgba(148, 163, 184, 0.35);
+  border-radius: 12px;
+  padding: 14px;
+  background: rgba(11, 18, 32, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 76px;
+}
+
+.desktop-only {
+  display: none;
+}
+
+@media (min-width: 768px) {
+  .desktop-only {
+    display: inline-flex;
+  }
+}

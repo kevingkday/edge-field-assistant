@@ -2,6 +2,17 @@
  * Core type definitions for the schema-driven Edge Field Assistant SDK.
  */
 
+export interface FieldExtractSpec {
+  /** Key name in extracted_data. */
+  key: string;
+  /** Expected value type for strict extraction. */
+  type: 'string' | 'integer' | 'number' | 'boolean' | 'enum';
+  /** Allowed values when type is 'enum'. */
+  enumValues?: string[];
+  /** Optional guidance for extracting this field. */
+  description?: string;
+}
+
 export interface FieldSchemaItem {
   /** Unique identifier for this checklist item within the schema. */
   id: string;
@@ -13,8 +24,19 @@ export interface FieldSchemaItem {
   promptHint: string;
   /** Optional target structured keys to extract for this item. */
   extractKeys?: string[];
+  /** Optional strict field type & enum constraints for extracted_data. */
+  fieldSpecs?: FieldExtractSpec[];
   /** Whether this item is required before completing the session. */
   required?: boolean;
+}
+
+export interface CustomModelEntry {
+  id: string;
+  name: string;
+  url: string;
+  size_mb?: number | null;
+  description?: string | null;
+  updated_at?: string;
 }
 
 export interface FieldAppSchema {

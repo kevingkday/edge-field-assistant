@@ -30,6 +30,7 @@ export function buildStatelessTurnPrompt(
     label: item.label,
     category: item.category,
     extractKeys: item.extractKeys || [],
+    ...(item.fieldSpecs && item.fieldSpecs.length > 0 ? { fieldSpecs: item.fieldSpecs } : {}),
     completed: Boolean(item.completed),
   }));
 
@@ -49,7 +50,7 @@ Operator Field Note:
 Rules:
 1. Identify detected_item and match checklist_item_id from Current Checklist JSON (or null if none matches).
 2. If that checklist_item_id already has "completed": true, set "already_completed": true and set spoken_feedback to: "You already captured <item> — next up is ${nextUncompleted}."
-3. Extract concrete structured key-values in extracted_data (prefer the matched item's extractKeys when applicable).
+3. Extract concrete structured key-values in extracted_data (prefer the matched item's extractKeys/fieldSpecs; strictly use integers for integer fields and exact enumValues for enum fields).
 4. List any ${flagLabel.toLowerCase()}, hazards, blockers, or deficiencies in red_flags.
 5. Output ONLY valid JSON matching:
 {"detected_item":"string","checklist_item_id":"string|null","already_completed":false,"extracted_data":{},"red_flags":[],"spoken_feedback":"string","next_recommended_item":"string"}`;

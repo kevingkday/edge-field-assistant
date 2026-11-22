@@ -1,0 +1,114 @@
+{
+  "id": "bc-residential-archetype",
+  "version": "1.0.0",
+  "name": "BC Residential Archetype & COPE",
+  "description": "Classifies 12 core BC/North American residential building archetypes with strict integer dimensions and cladding enums.",
+  "domain": "insurance",
+  "persona": "British Columbia residential property underwriting & archetype classification copilot",
+  "flagLabel": "Underwriting Red Flags",
+  "accentColor": "#0ea5e9",
+  "items": [
+    {
+      "id": "front_elevation_archetype",
+      "label": "Front Elevation & Archetype Classification",
+      "category": "Archetype & Dimensions",
+      "promptHint": "Capture full front facade including roofline, entry, and garage. Classify into one of the 12 core BC residential archetypes and estimate integer dimensions.",
+      "extractKeys": ["matched_archetype", "width_ft", "depth_ft", "stories", "total_sqft"],
+      "fieldSpecs": [
+        {
+          "key": "matched_archetype",
+          "type": "enum",
+          "enumValues": [
+            "vancouver_special",
+            "rancher_bungalow",
+            "bi_level_raised_ranch",
+            "split_level",
+            "two_storey_suburban",
+            "west_coast_contemporary",
+            "craftsman_character",
+            "cape_cod_one_half",
+            "modern_infill_box",
+            "duplex_side_by_side",
+            "townhouse_row",
+            "manufactured_modular"
+          ],
+          "description": "Exact architectural archetype slug"
+        },
+        {
+          "key": "width_ft",
+          "type": "integer",
+          "description": "Estimated building footprint width in feet (integer)"
+        },
+        {
+          "key": "depth_ft",
+          "type": "integer",
+          "description": "Estimated building footprint depth in feet (integer)"
+        },
+        {
+          "key": "stories",
+          "type": "integer",
+          "description": "Number of above-grade stories (integer)"
+        },
+        {
+          "key": "total_sqft",
+          "type": "integer",
+          "description": "Estimated total finished square footage (integer)"
+        }
+      ],
+      "required": true
+    },
+    {
+      "id": "exterior_cladding_roof",
+      "label": "Exterior Cladding & Roof Finish",
+      "category": "Construction",
+      "promptHint": "Capture primary exterior wall cladding and roofline material.",
+      "extractKeys": ["cladding_material", "roof_material"],
+      "fieldSpecs": [
+        {
+          "key": "cladding_material",
+          "type": "enum",
+          "enumValues": [
+            "stucco",
+            "vinyl_siding",
+            "wood_siding",
+            "hardie_plank",
+            "brick",
+            "stone"
+          ],
+          "description": "Primary exterior wall cladding enum"
+        },
+        {
+          "key": "roof_material",
+          "type": "string",
+          "description": "Primary roof covering (e.g. asphalt_shingle, metal, torch_on, cedar_shake)"
+        }
+      ],
+      "required": true
+    },
+    {
+      "id": "suite_garage_exposures",
+      "label": "Secondary Suite, Garage & Exposures",
+      "category": "Occupancy & Exposures",
+      "promptHint": "Note ground-level suite entries, attached garage bays, or close neighbouring exposures.",
+      "extractKeys": ["garage_bays", "secondary_suite_present", "exposure_notes"],
+      "fieldSpecs": [
+        {
+          "key": "garage_bays",
+          "type": "integer",
+          "description": "Number of attached/built-in garage bays (integer)"
+        },
+        {
+          "key": "secondary_suite_present",
+          "type": "boolean",
+          "description": "Whether a secondary suite or basement entry is visible"
+        },
+        {
+          "key": "exposure_notes",
+          "type": "string",
+          "description": "Notable adjacent structure or vegetation exposure"
+        }
+      ],
+      "required": false
+    }
+  ]
+}

@@ -1,18 +1,19 @@
 {
-  "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "edge-field-assistant",
-  "main": "src/worker.ts",
-  "compatibility_date": "2025-05-01",
-  "assets": {
-    "directory": "./demo-app/dist",
-    "binding": "ASSETS",
-    "not_found_handling": "single-page-application"
-  },
-  "d1_databases": [
-    {
-      "binding": "SCHEMAS_DB",
-      "database_name": "edge-field-assistant-schemas",
-      "database_id": "35ec24b6-d12a-4631-b0c4-d8b5307f7e27"
-    }
-  ]
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "edge-field-assistant",
+	"main": "src/worker.ts",
+	"compatibility_date": "2025-05-01",
+	"assets": {
+		"directory": "./demo-app/dist",
+		"not_found_handling": "single-page-application",
+		"binding": "ASSETS"
+	},
+	"d1_databases": [
+		{
+			"binding": "SCHEMAS_DB",
+			"database_name": "edge-field-assistant-schemas",
+			"database_id": "25ec2486-d12e-4e11-80c4-408038f37e27",
+			"remote": true
+		}
+	]
 }

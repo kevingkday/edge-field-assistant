@@ -2,6 +2,7 @@ import type { FieldAppSchema } from '@edge-field-assistant/core';
 
 export const BUILT_IN_SCHEMA_IDS = new Set([
   'twincover-cope',
+  'bc-residential-archetype',
   'oceanfalls-facility',
   'twinflow-lead-intake',
 ]);

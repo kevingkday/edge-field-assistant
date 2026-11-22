@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { Activity, Copy, Check, HardDrive, Trash2, Wifi, WifiOff, X } from 'lucide-react';
-import { formatBytes, type TelemetrySnapshot } from '@edge-field-assistant/core';
+import { Activity, Copy, Check, Database, HardDrive, Layers, Plus, Trash2, Wifi, WifiOff, X } from 'lucide-react';
+import { formatBytes, type CustomModelEntry, type TelemetrySnapshot } from '@edge-field-assistant/core';
+import { DEFAULT_BUILTIN_MODEL_ID } from '../utils/modelSync';
 
 interface TelemetryDrawerProps {
   isOpen: boolean;
@@ -12,6 +13,12 @@ interface TelemetryDrawerProps {
   forceLocalWebGpu: boolean;
   onToggleForceLocalWebGpu: (force: boolean) => void;
   onDeleteModel: () => Promise<void> | void;
+  onOpenSchemaBuilder: () => void;
+  availableModels: CustomModelEntry[];
+  activeModelId: string;
+  onSelectModel: (modelId: string) => void;
+  onSaveCustomModel: (model: CustomModelEntry) => Promise<void>;
+  onDeleteCustomModel: (modelId: string) => Promise<void>;
   jsonState: unknown;
   onClose: () => void;
 }
@@ -26,11 +33,20 @@ export const TelemetryDrawer: React.FC<TelemetryDrawerProps> = ({
   forceLocalWebGpu,
   onToggleForceLocalWebGpu,
   onDeleteModel,
+  onOpenSchemaBuilder,
+  availableModels,
+  activeModelId,
+  onSelectModel,
+  onSaveCustomModel,
+  onDeleteCustomModel,
   jsonState,
   onClose,
 }) => {
   const [copied, setCopied] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [newModelName, setNewModelName] = useState('');
+  const [newModelUrl, setNewModelUrl] = useState('');
+  const [savingModel, setSavingModel] = useState(false);
   const [storageEstimate, setStorageEstimate] = useState<{
     usage: number;
     quota: number;
@@ -188,7 +204,7 @@ export const TelemetryDrawer: React.FC<TelemetryDrawerProps> = ({
 
         <div>
           <label style={{ fontSize: 12, color: 'var(--text-muted)', display: 'block', marginBottom: 6 }}>
-            Admin Sync Token (Optional Bearer for /api/schemas)
+            Admin Sync Token (Optional Bearer for /api/schemas & /api/models)
           </label>
           <input
             type="password"
@@ -197,6 +213,103 @@ export const TelemetryDrawer: React.FC<TelemetryDrawerProps> = ({
             value={adminToken}
             onChange={(e) => onAdminTokenChange(e.target.value)}
           />
+        </div>
+
+        <div className="card" style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600 }}>
+              <Layers size={14} color="#38bdf8" />
+              Schema Authoring
+            </div>
+            <button
+              type="button"
+              className="btn"
+              style={{ padding: '6px 10px', fontSize: 12 }}
+              onClick={() => {
+                onClose();
+                onOpenSchemaBuilder();
+              }}
+            >
+              <Plus size={13} /> New / Manage Schemas
+            </button>
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+            Create, import, or edit custom inspection checklists and sync them to Cloudflare D1.
+          </div>
+        </div>
+
+        <div className="card" style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600 }}>
+            <Database size={14} color="#38bdf8" />
+            Custom Model Registry (.litertlm)
+          </div>
+          <select
+            className="select"
+            style={{ fontSize: 12, padding: '8px 10px' }}
+            value={activeModelId}
+            onChange={(e) => onSelectModel(e.target.value)}
+          >
+            {availableModels.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.name}
+              </option>
+            ))}
+          </select>
+          {activeModelId !== DEFAULT_BUILTIN_MODEL_ID && (
+            <button
+              type="button"
+              className="btn btn-danger"
+              style={{ padding: '5px 10px', fontSize: 12 }}
+              onClick={() => onDeleteCustomModel(activeModelId)}
+            >
+              <Trash2 size={13} /> Delete Selected Custom Model
+            </button>
+          )}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, paddingTop: 6, borderTop: '1px solid var(--border)' }}>
+            <input
+              className="input"
+              style={{ fontSize: 12, padding: '7px 10px' }}
+              placeholder="Model name (e.g. Gemma 4 E4B R2)"
+              value={newModelName}
+              onChange={(e) => setNewModelName(e.target.value)}
+            />
+            <div style={{ display: 'flex', gap: 6 }}>
+              <input
+                className="input"
+                style={{ fontSize: 12, padding: '7px 10px' }}
+                placeholder="https://.../model.litertlm"
+                value={newModelUrl}
+                onChange={(e) => setNewModelUrl(e.target.value)}
+              />
+              <button
+                type="button"
+                className="btn btn-primary"
+                style={{ padding: '7px 10px', fontSize: 12, whiteSpace: 'nowrap' }}
+                disabled={savingModel || !newModelName.trim() || !newModelUrl.trim()}
+                onClick={async () => {
+                  setSavingModel(true);
+                  try {
+                    const id = newModelName
+                      .trim()
+                      .toLowerCase()
+                      .replace(/[^a-z0-9]+/g, '-')
+                      .replace(/^-|-$/g, '');
+                    await onSaveCustomModel({
+                      id: id || `model-${Date.now()}`,
+                      name: newModelName.trim(),
+                      url: newModelUrl.trim(),
+                    });
+                    setNewModelName('');
+                    setNewModelUrl('');
+                  } finally {
+                    setSavingModel(false);
+                  }
+                }}
+              >
+                <Plus size={13} /> Add
+              </button>
+            </div>
+          </div>
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, flex: 1 }}>

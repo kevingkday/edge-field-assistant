@@ -16,11 +16,11 @@ interface KVNamespace {
 }
 
 interface Fetcher {
-  fetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response>;
+  fetch(request: Request): Promise<Response>;
 }
 
 export interface Env {
-  ASSETS: Fetcher;
+  ASSETS?: Fetcher;
   SCHEMAS_DB?: D1Database;
   SCHEMAS_KV?: KVNamespace;
   SCHEMA_ADMIN_TOKEN?: string;
@@ -33,7 +33,17 @@ interface SchemaRow {
   updated_at: string;
 }
 
-const KV_PREFIX = 'schema:';
+interface CustomModelRow {
+  id: string;
+  name: string;
+  url: string;
+  size_mb: number | null;
+  description: string | null;
+  updated_at: string;
+}
+
+const SCHEMA_KV_PREFIX = 'schema:';
+const MODEL_KV_PREFIX = 'model:';
 
 function jsonResponse(
   data: unknown,
@@ -57,9 +67,9 @@ function isAuthorized(request: Request, env: Env): boolean {
   return auth === `Bearer ${token}`;
 }
 
-function validateSchemaPayload(body: unknown):
-  | { valid: true; id: string; name: string; schemaJson: string }
-  | { valid: false; error: string } {
+function validateSchemaPayload(
+  body: unknown
+): { valid: true; id: string; name: string; schemaJson: string } | { valid: false; error: string } {
   if (!body || typeof body !== 'object' || Array.isArray(body)) {
     return { valid: false, error: 'Request body must be a JSON object.' };
   }
@@ -98,126 +108,311 @@ function validateSchemaPayload(body: unknown):
   };
 }
 
-async function handleGetSchemas(env: Env): Promise<Response> {
-  try {
-    if (env.SCHEMAS_DB) {
-      const { results } = await env.SCHEMAS_DB.prepare(
-        'SELECT id, name, schema_json, updated_at FROM custom_schemas ORDER BY updated_at DESC'
-      ).all<SchemaRow>();
-      return jsonResponse(results || [], 200, { 'X-Schema-Storage': 'd1' });
+function validateModelPayload(body: unknown):
+  | {
+      valid: true;
+      id: string;
+      name: string;
+      url: string;
+      size_mb: number | null;
+      description: string | null;
     }
+  | { valid: false; error: string } {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return { valid: false, error: 'Request body must be a JSON object.' };
+  }
 
-    if (env.SCHEMAS_KV) {
-      const listed = await env.SCHEMAS_KV.list({ prefix: KV_PREFIX });
-      const rows = await Promise.all(
-        listed.keys.map(async (k) => {
-          const raw = await env.SCHEMAS_KV!.get(k.name);
-          if (!raw) return null;
-          try {
-            return JSON.parse(raw) as SchemaRow;
-          } catch {
-            return null;
-          }
-        })
+  const record = body as Record<string, unknown>;
+  const name = typeof record.name === 'string' ? record.name.trim() : '';
+  const rawId = typeof record.id === 'string' ? record.id.trim() : '';
+  const id =
+    rawId ||
+    name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '');
+  const url = typeof record.url === 'string' ? record.url.trim() : '';
+
+  if (!id || !name || !url) {
+    return { valid: false, error: 'Model must include non-empty "id", "name", and "url".' };
+  }
+
+  if (!/^https?:\/\//i.test(url)) {
+    return { valid: false, error: 'Model "url" must start with http:// or https://.' };
+  }
+
+  let sizeMb: number | null = null;
+  if (record.size_mb !== undefined && record.size_mb !== null && record.size_mb !== '') {
+    const parsedSize = Number(record.size_mb);
+    if (!Number.isFinite(parsedSize) || parsedSize < 0) {
+      return { valid: false, error: 'Model "size_mb" must be a non-negative number.' };
+    }
+    sizeMb = Math.round(parsedSize);
+  }
+
+  const description =
+    typeof record.description === 'string' && record.description.trim()
+      ? record.description.trim()
+      : null;
+
+  return { valid: true, id, name, url, size_mb: sizeMb, description };
+}
+
+async function listFromKv<T extends { updated_at: string }>(
+  kv: KVNamespace,
+  prefix: string
+): Promise<T[]> {
+  const listed = await kv.list({ prefix });
+  const rows = await Promise.all(
+    listed.keys.map(async (k) => {
+      const raw = await kv.get(k.name);
+      if (!raw) return null;
+      try {
+        return JSON.parse(raw) as T;
+      } catch {
+        return null;
+      }
+    })
+  );
+  return rows
+    .filter((r): r is T => r !== null)
+    .sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1));
+}
+
+async function handleSchemasRequest(request: Request, env: Env): Promise<Response> {
+  const method = request.method.toUpperCase();
+
+  if (method === 'GET') {
+    try {
+      if (env.SCHEMAS_DB) {
+        const { results } = await env.SCHEMAS_DB.prepare(
+          'SELECT id, name, schema_json, updated_at FROM custom_schemas ORDER BY updated_at DESC'
+        ).all<SchemaRow>();
+        return jsonResponse(results || [], 200, { 'X-Schema-Storage': 'd1' });
+      }
+      if (env.SCHEMAS_KV) {
+        const rows = await listFromKv<SchemaRow>(env.SCHEMAS_KV, SCHEMA_KV_PREFIX);
+        return jsonResponse(rows, 200, { 'X-Schema-Storage': 'kv' });
+      }
+      return jsonResponse([], 200, { 'X-Schema-Storage': 'unconfigured' });
+    } catch (err) {
+      return jsonResponse(
+        { error: err instanceof Error ? err.message : 'Failed to load schemas' },
+        500
       );
-      const validRows = rows
-        .filter((r): r is SchemaRow => r !== null)
-        .sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1));
-      return jsonResponse(validRows, 200, { 'X-Schema-Storage': 'kv' });
+    }
+  }
+
+  if (method === 'POST') {
+    if (!isAuthorized(request, env)) {
+      return jsonResponse({ error: 'Unauthorized: valid SCHEMA_ADMIN_TOKEN required.' }, 401);
     }
 
-    return jsonResponse([], 200, { 'X-Schema-Storage': 'unconfigured' });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : 'Failed to load schemas';
-    return jsonResponse({ error: message }, 500);
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
+      return jsonResponse({ error: 'Invalid JSON request body.' }, 400);
+    }
+
+    const validation = validateSchemaPayload(body);
+    if (!validation.valid) {
+      return jsonResponse({ error: validation.error }, 400);
+    }
+
+    const row: SchemaRow = {
+      id: validation.id,
+      name: validation.name,
+      schema_json: validation.schemaJson,
+      updated_at: new Date().toISOString(),
+    };
+
+    try {
+      if (env.SCHEMAS_DB) {
+        await env.SCHEMAS_DB.prepare(
+          `INSERT INTO custom_schemas (id, name, schema_json, updated_at)
+           VALUES (?, ?, ?, ?)
+           ON CONFLICT(id) DO UPDATE SET
+             name = excluded.name,
+             schema_json = excluded.schema_json,
+             updated_at = excluded.updated_at`
+        )
+          .bind(row.id, row.name, row.schema_json, row.updated_at)
+          .run();
+        return jsonResponse({ ok: true, storage: 'd1', ...row }, 200);
+      }
+
+      if (env.SCHEMAS_KV) {
+        await env.SCHEMAS_KV.put(`${SCHEMA_KV_PREFIX}${row.id}`, JSON.stringify(row));
+        return jsonResponse({ ok: true, storage: 'kv', ...row }, 200);
+      }
+
+      return jsonResponse(
+        { ok: false, error: 'Neither SCHEMAS_DB (D1) nor SCHEMAS_KV (KV) is bound.' },
+        501
+      );
+    } catch (err) {
+      return jsonResponse(
+        { error: err instanceof Error ? err.message : 'Failed to save schema' },
+        500
+      );
+    }
   }
+
+  if (method === 'DELETE') {
+    if (!isAuthorized(request, env)) {
+      return jsonResponse({ error: 'Unauthorized: valid SCHEMA_ADMIN_TOKEN required.' }, 401);
+    }
+
+    const id = new URL(request.url).searchParams.get('id')?.trim();
+    if (!id) {
+      return jsonResponse({ error: 'Missing required "id" query parameter.' }, 400);
+    }
+
+    try {
+      if (env.SCHEMAS_DB) {
+        await env.SCHEMAS_DB.prepare('DELETE FROM custom_schemas WHERE id = ?').bind(id).run();
+        return jsonResponse({ ok: true, storage: 'd1', deletedId: id }, 200);
+      }
+
+      if (env.SCHEMAS_KV) {
+        await env.SCHEMAS_KV.delete(`${SCHEMA_KV_PREFIX}${id}`);
+        return jsonResponse({ ok: true, storage: 'kv', deletedId: id }, 200);
+      }
+
+      return jsonResponse(
+        { ok: false, error: 'Neither SCHEMAS_DB (D1) nor SCHEMAS_KV (KV) is bound.' },
+        501
+      );
+    } catch (err) {
+      return jsonResponse(
+        { error: err instanceof Error ? err.message : 'Failed to delete schema' },
+        500
+      );
+    }
+  }
+
+  return jsonResponse({ error: 'Method not allowed' }, 405);
 }
 
-async function handlePostSchema(request: Request, env: Env): Promise<Response> {
-  if (!isAuthorized(request, env)) {
-    return jsonResponse({ error: 'Unauthorized: valid SCHEMA_ADMIN_TOKEN required.' }, 401);
+async function handleModelsRequest(request: Request, env: Env): Promise<Response> {
+  const method = request.method.toUpperCase();
+
+  if (method === 'GET') {
+    try {
+      if (env.SCHEMAS_DB) {
+        const { results } = await env.SCHEMAS_DB.prepare(
+          'SELECT id, name, url, size_mb, description, updated_at FROM custom_models ORDER BY updated_at DESC'
+        ).all<CustomModelRow>();
+        return jsonResponse(results || [], 200, { 'X-Model-Storage': 'd1' });
+      }
+      if (env.SCHEMAS_KV) {
+        const rows = await listFromKv<CustomModelRow>(env.SCHEMAS_KV, MODEL_KV_PREFIX);
+        return jsonResponse(rows, 200, { 'X-Model-Storage': 'kv' });
+      }
+      return jsonResponse([], 200, { 'X-Model-Storage': 'unconfigured' });
+    } catch (err) {
+      return jsonResponse(
+        { error: err instanceof Error ? err.message : 'Failed to load custom models' },
+        500
+      );
+    }
   }
 
-  let body: unknown;
-  try {
-    body = await request.json();
-  } catch {
-    return jsonResponse({ error: 'Invalid JSON request body.' }, 400);
-  }
-
-  const validation = validateSchemaPayload(body);
-  if (!validation.valid) {
-    return jsonResponse({ error: validation.error }, 400);
-  }
-
-  const updatedAt = new Date().toISOString();
-  const row: SchemaRow = {
-    id: validation.id,
-    name: validation.name,
-    schema_json: validation.schemaJson,
-    updated_at: updatedAt,
-  };
-
-  try {
-    if (env.SCHEMAS_DB) {
-      await env.SCHEMAS_DB.prepare(
-        `INSERT INTO custom_schemas (id, name, schema_json, updated_at)
-         VALUES (?, ?, ?, ?)
-         ON CONFLICT(id) DO UPDATE SET
-           name = excluded.name,
-           schema_json = excluded.schema_json,
-           updated_at = excluded.updated_at`
-      )
-        .bind(row.id, row.name, row.schema_json, row.updated_at)
-        .run();
-      return jsonResponse({ ok: true, storage: 'd1', ...row }, 200);
+  if (method === 'POST') {
+    if (!isAuthorized(request, env)) {
+      return jsonResponse({ error: 'Unauthorized: valid SCHEMA_ADMIN_TOKEN required.' }, 401);
     }
 
-    if (env.SCHEMAS_KV) {
-      await env.SCHEMAS_KV.put(`${KV_PREFIX}${row.id}`, JSON.stringify(row));
-      return jsonResponse({ ok: true, storage: 'kv', ...row }, 200);
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
+      return jsonResponse({ error: 'Invalid JSON request body.' }, 400);
     }
 
-    return jsonResponse(
-      { ok: false, error: 'Neither SCHEMAS_DB (D1) nor SCHEMAS_KV (KV) is bound.' },
-      501
-    );
-  } catch (err) {
-    const message = err instanceof Error ? err.message : 'Failed to save schema';
-    return jsonResponse({ error: message }, 500);
-  }
-}
-
-async function handleDeleteSchema(request: Request, env: Env): Promise<Response> {
-  if (!isAuthorized(request, env)) {
-    return jsonResponse({ error: 'Unauthorized: valid SCHEMA_ADMIN_TOKEN required.' }, 401);
-  }
-
-  const url = new URL(request.url);
-  const id = url.searchParams.get('id')?.trim();
-  if (!id) {
-    return jsonResponse({ error: 'Missing required "id" query parameter.' }, 400);
-  }
-
-  try {
-    if (env.SCHEMAS_DB) {
-      await env.SCHEMAS_DB.prepare('DELETE FROM custom_schemas WHERE id = ?').bind(id).run();
-      return jsonResponse({ ok: true, storage: 'd1', deletedId: id }, 200);
+    const validation = validateModelPayload(body);
+    if (!validation.valid) {
+      return jsonResponse({ error: validation.error }, 400);
     }
 
-    if (env.SCHEMAS_KV) {
-      await env.SCHEMAS_KV.delete(`${KV_PREFIX}${id}`);
-      return jsonResponse({ ok: true, storage: 'kv', deletedId: id }, 200);
+    const row: CustomModelRow = {
+      id: validation.id,
+      name: validation.name,
+      url: validation.url,
+      size_mb: validation.size_mb,
+      description: validation.description,
+      updated_at: new Date().toISOString(),
+    };
+
+    try {
+      if (env.SCHEMAS_DB) {
+        await env.SCHEMAS_DB.prepare(
+          `INSERT INTO custom_models (id, name, url, size_mb, description, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?)
+           ON CONFLICT(id) DO UPDATE SET
+             name = excluded.name,
+             url = excluded.url,
+             size_mb = excluded.size_mb,
+             description = excluded.description,
+             updated_at = excluded.updated_at`
+        )
+          .bind(row.id, row.name, row.url, row.size_mb, row.description, row.updated_at)
+          .run();
+        return jsonResponse({ ok: true, storage: 'd1', ...row }, 200);
+      }
+
+      if (env.SCHEMAS_KV) {
+        await env.SCHEMAS_KV.put(`${MODEL_KV_PREFIX}${row.id}`, JSON.stringify(row));
+        return jsonResponse({ ok: true, storage: 'kv', ...row }, 200);
+      }
+
+      return jsonResponse(
+        { ok: false, error: 'Neither SCHEMAS_DB (D1) nor SCHEMAS_KV (KV) is bound.' },
+        501
+      );
+    } catch (err) {
+      return jsonResponse(
+        { error: err instanceof Error ? err.message : 'Failed to save custom model' },
+        500
+      );
+    }
+  }
+
+  if (method === 'DELETE') {
+    if (!isAuthorized(request, env)) {
+      return jsonResponse({ error: 'Unauthorized: valid SCHEMA_ADMIN_TOKEN required.' }, 401);
     }
 
-    return jsonResponse(
-      { ok: false, error: 'Neither SCHEMAS_DB (D1) nor SCHEMAS_KV (KV) is bound.' },
-      501
-    );
-  } catch (err) {
-    const message = err instanceof Error ? err.message : 'Failed to delete schema';
-    return jsonResponse({ error: message }, 500);
+    const id = new URL(request.url).searchParams.get('id')?.trim();
+    if (!id) {
+      return jsonResponse({ error: 'Missing required "id" query parameter.' }, 400);
+    }
+
+    try {
+      if (env.SCHEMAS_DB) {
+        await env.SCHEMAS_DB.prepare('DELETE FROM custom_models WHERE id = ?').bind(id).run();
+        return jsonResponse({ ok: true, storage: 'd1', deletedId: id }, 200);
+      }
+
+      if (env.SCHEMAS_KV) {
+        await env.SCHEMAS_KV.delete(`${MODEL_KV_PREFIX}${id}`);
+        return jsonResponse({ ok: true, storage: 'kv', deletedId: id }, 200);
+      }
+
+      return jsonResponse(
+        { ok: false, error: 'Neither SCHEMAS_DB (D1) nor SCHEMAS_KV (KV) is bound.' },
+        501
+      );
+    } catch (err) {
+      return jsonResponse(
+        { error: err instanceof Error ? err.message : 'Failed to delete custom model' },
+        500
+      );
+    }
   }
+
+  return jsonResponse({ error: 'Method not allowed' }, 405);
 }
 
 export default {
@@ -225,22 +420,17 @@ export default {
     const url = new URL(request.url);
 
     if (url.pathname === '/api/schemas') {
-      if (request.method === 'OPTIONS') {
-        return new Response(null, {
-          status: 204,
-          headers: {
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
-            'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-          },
-        });
-      }
-      if (request.method === 'GET') return handleGetSchemas(env);
-      if (request.method === 'POST') return handlePostSchema(request, env);
-      if (request.method === 'DELETE') return handleDeleteSchema(request, env);
-      return jsonResponse({ error: `Method ${request.method} not allowed` }, 405);
+      return handleSchemasRequest(request, env);
     }
 
-    return env.ASSETS.fetch(request);
+    if (url.pathname === '/api/models') {
+      return handleModelsRequest(request, env);
+    }
+
+    if (env.ASSETS) {
+      return env.ASSETS.fetch(request);
+    }
+
+    return new Response('Not Found', { status: 404 });
   },
 };
