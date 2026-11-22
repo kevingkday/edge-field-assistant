@@ -182,7 +182,12 @@ export async function downloadModelToOpfs(
   const writable = await tempHandle.createWritable();
 
   try {
-    const resp = await fetch(merged.downloadUrl, { signal });
+    const resp = await fetch(merged.downloadUrl, {
+      signal,
+      mode: 'cors',
+      credentials: 'omit',
+      redirect: 'follow',
+    });
     if (!resp.ok || !resp.body) {
       throw new Error(`Model download failed (HTTP ${resp.status})`);
     }
@@ -209,6 +214,63 @@ export async function downloadModelToOpfs(
     const finalWritable = await finalHandle.createWritable();
     const downloadedFile = await tempHandle.getFile();
     await downloadedFile.stream().pipeTo(finalWritable);
+    await root.removeEntry(tempName).catch(() => {});
+
+    onProgress?.({ receivedBytes, totalBytes: receivedBytes, percent: 100 });
+    return true;
+  } catch (err) {
+    try {
+      await writable.abort();
+      await root.removeEntry(tempName).catch(() => {});
+    } catch {
+      // ignore cleanup failure
+    }
+    if (err instanceof TypeError && /fetch/i.test(err.message)) {
+      throw new Error(
+        `Network/CORS error fetching ${merged.filename} (${err.message}). If mobile Chrome blocks the 2.3 GB stream, download the .litertlm file in your browser and use "Import .litertlm".`
+      );
+    }
+    throw err;
+  }
+}
+
+/**
+ * Imports a locally downloaded .litertlm File directly into OPFS.
+ */
+export async function importModelFileToOpfs(
+  file: File,
+  onProgress?: (progress: ModelDownloadProgress) => void,
+  config: Partial<ModelConfig> = {}
+): Promise<boolean> {
+  const merged = { ...DEFAULT_MODEL_CONFIG, ...config };
+  const root = await navigator.storage.getDirectory();
+  const tempName = `${merged.filename}.importing`;
+  const tempHandle = await root.getFileHandle(tempName, { create: true });
+  const writable = await tempHandle.createWritable();
+
+  try {
+    const totalBytes = file.size;
+    const reader = file.stream().getReader();
+    let receivedBytes = 0;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      await writable.write(value);
+      receivedBytes += value.byteLength;
+      onProgress?.({
+        receivedBytes,
+        totalBytes,
+        percent: totalBytes > 0 ? Math.min(99, Math.round((receivedBytes / totalBytes) * 100)) : 0,
+      });
+    }
+
+    await writable.close();
+
+    const finalHandle = await root.getFileHandle(merged.filename, { create: true });
+    const finalWritable = await finalHandle.createWritable();
+    const importedFile = await tempHandle.getFile();
+    await importedFile.stream().pipeTo(finalWritable);
     await root.removeEntry(tempName).catch(() => {});
 
     onProgress?.({ receivedBytes, totalBytes: receivedBytes, percent: 100 });

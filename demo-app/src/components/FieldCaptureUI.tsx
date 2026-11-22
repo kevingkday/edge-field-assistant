@@ -12,6 +12,7 @@ import {
   Send,
   Square,
   Trash2,
+  Upload,
   Volume2,
   VolumeX,
 } from 'lucide-react';
@@ -55,6 +56,7 @@ interface FieldCaptureUIProps {
   activeModelId: string;
   onSelectModel: (modelId: string) => void;
   onDownloadModel: () => void;
+  onImportModelFile: (file: File) => void;
   onDeleteModel: () => void;
   onEvaluateStep: (frameBlob: Blob | null, transcript: string) => Promise<void>;
   onResetSession: () => void;
@@ -78,6 +80,7 @@ export const FieldCaptureUI: React.FC<FieldCaptureUIProps> = ({
   activeModelId,
   onSelectModel,
   onDownloadModel,
+  onImportModelFile,
   onDeleteModel,
   onEvaluateStep,
   onResetSession,
@@ -202,17 +205,33 @@ export const FieldCaptureUI: React.FC<FieldCaptureUIProps> = ({
           </select>
 
           {capability.state === 'ready_to_download' && (
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={onDownloadModel}
-              disabled={downloadingModel}
-            >
-              <Download size={15} />
-              {downloadingModel && downloadProgress
-                ? `Streaming to OPFS (${downloadProgress.percent}%)`
-                : 'Download to OPFS'}
-            </button>
+            <>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={onDownloadModel}
+                disabled={downloadingModel}
+              >
+                <Download size={15} />
+                {downloadingModel && downloadProgress
+                  ? `Streaming to OPFS (${downloadProgress.percent}%)`
+                  : 'Download to OPFS'}
+              </button>
+              <label className="btn" style={{ cursor: 'pointer' }} title="Import a .litertlm file downloaded via browser">
+                <Upload size={14} /> Import .litertlm
+                <input
+                  type="file"
+                  accept=".litertlm,application/octet-stream"
+                  style={{ display: 'none' }}
+                  disabled={downloadingModel}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    e.target.value = '';
+                    if (file) onImportModelFile(file);
+                  }}
+                />
+              </label>
+            </>
           )}
           {capability.state === 'opfs_cached' && (
             <button

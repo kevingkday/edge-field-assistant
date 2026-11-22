@@ -5,6 +5,7 @@ import {
   createChecklistFromSchema,
   detectDeviceCapability,
   downloadModelToOpfs,
+  importModelFileToOpfs,
   mergeStepIntoChecklistState,
   removeModelFromOpfs,
   type CapturedMediaEntry,
@@ -283,6 +284,20 @@ export default function App() {
     }
   };
 
+  const handleImportModelFile = async (file: File) => {
+    setDownloadingModel(true);
+    setDownloadProgress({ percent: 0, receivedBytes: 0, totalBytes: file.size });
+    try {
+      await importModelFileToOpfs(file, (prog) => setDownloadProgress(prog), activeModelConfig);
+      const cap = await detectDeviceCapability(activeModelConfig, { forceLocalWebGpu });
+      setCapability(cap);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Model import failed');
+    } finally {
+      setDownloadingModel(false);
+    }
+  };
+
   const handleDeleteOpfsModel = async () => {
     await removeModelFromOpfs(activeModelConfig.filename);
     routerRef.current?.dispose();
@@ -516,6 +531,7 @@ export default function App() {
             activeModelId={activeModelId}
             onSelectModel={handleSelectModel}
             onDownloadModel={handleDownloadModel}
+            onImportModelFile={handleImportModelFile}
             onDeleteModel={handleDeleteOpfsModel}
             onEvaluateStep={(blob, txt) => handleEvaluateStep(blob, txt).then(() => undefined)}
             onResetSession={() => handleSchemaSelect(activeSchema.id)}
