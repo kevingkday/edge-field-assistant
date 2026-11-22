@@ -1,4 +1,4 @@
-const CACHE_NAME = 'edge-field-assistant-v2';
+const CACHE_NAME = 'edge-field-assistant-v3';
 const PRECACHE_URLS = [
   '/',
   '/index.html',
@@ -6,8 +6,9 @@ const PRECACHE_URLS = [
   '/icon.svg',
   '/schemas/index.json',
   '/schemas/twincover-cope.json',
+  '/schemas/bc-residential-archetype.json',
   '/schemas/oceanfalls-facility.json',
-  '/schemas/twinflow-lead-intake.json'
+  '/schemas/twinflow-lead-intake.json',
 ];
 
 self.addEventListener('install', (event) => {
@@ -44,16 +45,53 @@ self.addEventListener('fetch', (event) => {
 
   if (url.origin !== self.location.origin) return;
 
+  // Never cache API endpoints; always go straight to the Worker/D1 network.
+  if (url.pathname.startsWith('/api/')) {
+    return;
+  }
+
+  // Network-first for HTML navigations so new deployments never serve stale index.html
+  // pointing to old hashed /assets/ bundles.
+  if (
+    event.request.mode === 'navigate' ||
+    url.pathname === '/' ||
+    url.pathname === '/index.html'
+  ) {
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          if (response.ok) {
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put('/index.html', clone)).catch(() => {});
+          }
+          return response;
+        })
+        .catch(async () => {
+          const cached = await caches.match('/index.html');
+          return cached || new Response('Offline', { status: 503, statusText: 'Offline' });
+        })
+    );
+    return;
+  }
+
+  // Cache-first for hashed /assets/, /wasm/, and /schemas/ with network fallback.
   event.respondWith(
     caches.match(event.request).then((cached) => {
       if (cached) return cached;
-      return fetch(event.request).then((response) => {
-        if (response.ok && (url.pathname.startsWith('/wasm/') || url.pathname.startsWith('/schemas/') || url.pathname.startsWith('/assets/'))) {
-          const clone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone)).catch(() => {});
-        }
-        return response;
-      });
+      return fetch(event.request)
+        .then((response) => {
+          if (
+            response.ok &&
+            (url.pathname.startsWith('/wasm/') ||
+              url.pathname.startsWith('/schemas/') ||
+              url.pathname.startsWith('/assets/'))
+          ) {
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone)).catch(() => {});
+          }
+          return response;
+        })
+        .catch(() => new Response('', { status: 504, statusText: 'Gateway Timeout' }));
     })
   );
 });
