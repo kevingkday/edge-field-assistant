@@ -231,6 +231,21 @@ export const FieldCaptureUI: React.FC<FieldCaptureUIProps> = ({
                   }}
                 />
               </label>
+              {(() => {
+                const active = availableModels.find((m) => m.id === activeModelId);
+                return active?.url ? (
+                  <a
+                    href={active.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="btn"
+                    style={{ textDecoration: 'none' }}
+                    title="Download .litertlm using browser download manager"
+                  >
+                    Direct Link
+                  </a>
+                ) : null;
+              })()}
             </>
           )}
           {capability.state === 'opfs_cached' && (

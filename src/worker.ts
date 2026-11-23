@@ -415,6 +415,74 @@ async function handleModelsRequest(request: Request, env: Env): Promise<Response
   return jsonResponse({ error: 'Method not allowed' }, 405);
 }
 
+async function handleModelProxyRequest(request: Request): Promise<Response> {
+  if (request.method.toUpperCase() !== 'GET') {
+    return jsonResponse({ error: 'Method not allowed' }, 405);
+  }
+
+  const target = new URL(request.url).searchParams.get('url')?.trim();
+  if (!target || !/^https:\/\//i.test(target)) {
+    return jsonResponse({ error: 'Missing or invalid https:// "url" parameter.' }, 400);
+  }
+
+  let parsedTarget: URL;
+  try {
+    parsedTarget = new URL(target);
+  } catch {
+    return jsonResponse({ error: 'Malformed target URL.' }, 400);
+  }
+
+  const host = parsedTarget.hostname.toLowerCase();
+  if (
+    host === 'localhost' ||
+    host === '127.0.0.1' ||
+    host.endsWith('.local') ||
+    host.startsWith('10.') ||
+    host.startsWith('192.168.')
+  ) {
+    return jsonResponse({ error: 'Blocked private host.' }, 403);
+  }
+
+  try {
+    const upstreamHeaders = new Headers();
+    const range = request.headers.get('Range');
+    if (range) upstreamHeaders.set('Range', range);
+
+    const upstream = await fetch(parsedTarget.toString(), {
+      method: 'GET',
+      headers: upstreamHeaders,
+      redirect: 'follow',
+    });
+
+    if (!upstream.ok && upstream.status !== 206) {
+      return jsonResponse(
+        { error: `Upstream model fetch failed (HTTP ${upstream.status})` },
+        upstream.status
+      );
+    }
+
+    const headers = new Headers();
+    const contentType = upstream.headers.get('Content-Type') || 'application/octet-stream';
+    const contentLength = upstream.headers.get('Content-Length');
+    const contentRange = upstream.headers.get('Content-Range');
+    headers.set('Content-Type', contentType);
+    if (contentLength) headers.set('Content-Length', contentLength);
+    if (contentRange) headers.set('Content-Range', contentRange);
+    headers.set('Cache-Control', 'no-store');
+    headers.set('Cross-Origin-Resource-Policy', 'same-origin');
+
+    return new Response(upstream.body, {
+      status: upstream.status,
+      headers,
+    });
+  } catch (err) {
+    return jsonResponse(
+      { error: err instanceof Error ? err.message : 'Model proxy fetch failed' },
+      502
+    );
+  }
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
@@ -425,6 +493,10 @@ export default {
 
     if (url.pathname === '/api/models') {
       return handleModelsRequest(request, env);
+    }
+
+    if (url.pathname === '/api/model-proxy') {
+      return handleModelProxyRequest(request);
     }
 
     if (env.ASSETS) {

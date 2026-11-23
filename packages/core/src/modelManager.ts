@@ -182,12 +182,26 @@ export async function downloadModelToOpfs(
   const writable = await tempHandle.createWritable();
 
   try {
-    const resp = await fetch(merged.downloadUrl, {
-      signal,
-      mode: 'cors',
-      credentials: 'omit',
-      redirect: 'follow',
-    });
+    let resp: Response;
+    try {
+      resp = await fetch(merged.downloadUrl, {
+        signal,
+        mode: 'cors',
+        credentials: 'omit',
+        redirect: 'follow',
+      });
+    } catch (directErr) {
+      if (
+        typeof window !== 'undefined' &&
+        /^https:\/\//i.test(merged.downloadUrl) &&
+        directErr instanceof TypeError
+      ) {
+        const proxyUrl = `/api/model-proxy?url=${encodeURIComponent(merged.downloadUrl)}`;
+        resp = await fetch(proxyUrl, { signal });
+      } else {
+        throw directErr;
+      }
+    }
     if (!resp.ok || !resp.body) {
       throw new Error(`Model download failed (HTTP ${resp.status})`);
     }
