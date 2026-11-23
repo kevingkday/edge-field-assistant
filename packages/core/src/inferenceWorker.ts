@@ -33,8 +33,45 @@ let engineInstance: Engine | null = null;
 
 async function ensureWasmLoaded(wasmBaseUrl = '/wasm/'): Promise<void> {
   if (wasmLoaded) return;
-  await loadLiteRtLm(wasmBaseUrl);
-  wasmLoaded = true;
+
+  const normalizedBase = wasmBaseUrl.endsWith('/') ? wasmBaseUrl : `${wasmBaseUrl}/`;
+  const scope = self as unknown as {
+    importScripts?: (...urls: string[]) => void;
+    Module?: { locateFile?: (file: string) => string };
+    ModuleFactory?: unknown;
+  };
+
+  // Module Web Workers forbid native importScripts(); shim it via synchronous XHR
+  // + indirect eval so Emscripten's ModuleFactory attaches to globalThis, and set
+  // Module.locateFile so the .wasm binary resolves from wasmBaseUrl instead of /assets/.
+  const origImportScripts = scope.importScripts;
+  scope.Module = {
+    locateFile: (file: string) =>
+      new URL(file, new URL(normalizedBase, self.location.href)).href,
+  };
+  scope.importScripts = (...urls: string[]) => {
+    for (const rawUrl of urls) {
+      const resolved = new URL(rawUrl, self.location.href).href;
+      const xhr = new XMLHttpRequest();
+      xhr.open('GET', resolved, false);
+      xhr.send(null);
+      if (xhr.status < 200 || xhr.status >= 300) {
+        throw new Error(`Failed to load WASM loader script ${resolved} (HTTP ${xhr.status})`);
+      }
+      (0, eval)(
+        `${xhr.responseText}\n;if(typeof ModuleFactory!=="undefined")globalThis.ModuleFactory=ModuleFactory;`
+      );
+    }
+  };
+
+  try {
+    await loadLiteRtLm(normalizedBase);
+    wasmLoaded = true;
+  } finally {
+    if (origImportScripts) {
+      scope.importScripts = origImportScripts;
+    }
+  }
 }
 
 async function getOrCreateEngine(
