@@ -9,6 +9,21 @@
   "accentColor": "#8b5cf6",
   "items": [
     {
+      "id": "business_card_ocr",
+      "label": "Business Card OCR & Spoken Lead Notes",
+      "category": "Contact Capture",
+      "promptHint": "Snap a business card or speak the prospect's name, company, email, phone, and qualification notes.",
+      "extractKeys": ["name", "company", "email", "phone", "notes"],
+      "fieldSpecs": [
+        { "key": "name", "type": "string", "description": "Full name of the contact" },
+        { "key": "company", "type": "string", "description": "Company or organization name" },
+        { "key": "email", "type": "string", "description": "Email address" },
+        { "key": "phone", "type": "string", "description": "Phone number" },
+        { "key": "notes", "type": "string", "description": "Spoken or inferred lead qualification notes" }
+      ],
+      "required": true
+    },
+    {
       "id": "storefront_signage",
       "label": "Account Signage & Location Verification",
       "category": "Account Identity",
