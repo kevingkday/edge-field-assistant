@@ -168,7 +168,7 @@ export async function detectDeviceCapability(
 
 /**
  * Streams the LiteRT-LM model file from Hugging Face (or custom URL) directly into OPFS
- * with real-time progress callbacks and atomic temp-file swap.
+ * with Screen Wake Lock, Range-based resume support, and real-time progress callbacks.
  */
 export async function downloadModelToOpfs(
   onProgress?: (progress: ModelDownloadProgress) => void,
@@ -179,13 +179,37 @@ export async function downloadModelToOpfs(
   const root = await navigator.storage.getDirectory();
   const tempName = `${merged.filename}.downloading`;
   const tempHandle = await root.getFileHandle(tempName, { create: true });
-  const writable = await tempHandle.createWritable();
 
+  // Acquire Screen Wake Lock so mobile devices do not sleep and kill the stream mid-download.
+  let wakeLock: { release: () => Promise<void> } | null = null;
   try {
-    let resp: Response;
+    const nav = navigator as Navigator & {
+      wakeLock?: { request: (type: 'screen') => Promise<{ release: () => Promise<void> }> };
+    };
+    if (nav.wakeLock?.request) {
+      wakeLock = await nav.wakeLock.request('screen');
+    }
+  } catch {
+    // Wake Lock unsupported or denied; continue download
+  }
+
+  let existingBytes = 0;
+  try {
+    const existingFile = await tempHandle.getFile();
+    existingBytes = existingFile.size;
+  } catch {
+    existingBytes = 0;
+  }
+
+  const fetchWithFallback = async (rangeStart: number): Promise<Response> => {
+    const headers: Record<string, string> = {};
+    if (rangeStart > 0) {
+      headers.Range = `bytes=${rangeStart}-`;
+    }
     try {
-      resp = await fetch(merged.downloadUrl, {
+      return await fetch(merged.downloadUrl, {
         signal,
+        headers,
         mode: 'cors',
         credentials: 'omit',
         redirect: 'follow',
@@ -197,23 +221,63 @@ export async function downloadModelToOpfs(
         directErr instanceof TypeError
       ) {
         const proxyUrl = `/api/model-proxy?url=${encodeURIComponent(merged.downloadUrl)}`;
-        resp = await fetch(proxyUrl, { signal });
-      } else {
-        throw directErr;
+        return await fetch(proxyUrl, { signal, headers });
       }
+      throw directErr;
     }
-    if (!resp.ok || !resp.body) {
+  };
+
+  let writable: FileSystemWritableFileStream | null = null;
+  let wroteNewBytes = false;
+
+  try {
+    let resp = await fetchWithFallback(existingBytes);
+
+    // If Range is invalid/unsatisfiable, restart from byte 0.
+    if (resp.status === 416 && existingBytes > 0) {
+      existingBytes = 0;
+      resp = await fetchWithFallback(0);
+    }
+
+    if ((!resp.ok && resp.status !== 206) || !resp.body) {
       throw new Error(`Model download failed (HTTP ${resp.status})`);
     }
 
-    const totalBytes = Number(resp.headers.get('content-length') || 0);
+    const isPartial = resp.status === 206 && existingBytes > 0;
+    const resumeOffset = isPartial ? existingBytes : 0;
+
+    let totalBytes = 0;
+    if (isPartial) {
+      const cr = resp.headers.get('content-range') || '';
+      const match = cr.match(/\/(\d+)$/);
+      totalBytes = match
+        ? Number(match[1])
+        : resumeOffset + Number(resp.headers.get('content-length') || 0);
+    } else {
+      totalBytes = Number(resp.headers.get('content-length') || 0);
+    }
+
+    writable = await tempHandle.createWritable({ keepExistingData: isPartial });
+    if (isPartial) {
+      await writable.seek(resumeOffset);
+    }
+
     const reader = resp.body.getReader();
-    let receivedBytes = 0;
+    let receivedBytes = resumeOffset;
+
+    if (resumeOffset > 0) {
+      onProgress?.({
+        receivedBytes,
+        totalBytes,
+        percent: totalBytes > 0 ? Math.min(99, Math.round((receivedBytes / totalBytes) * 100)) : 0,
+      });
+    }
 
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
       await writable.write(value);
+      wroteNewBytes = true;
       receivedBytes += value.byteLength;
       onProgress?.({
         receivedBytes,
@@ -223,6 +287,7 @@ export async function downloadModelToOpfs(
     }
 
     await writable.close();
+    writable = null;
 
     const finalHandle = await root.getFileHandle(merged.filename, { create: true });
     const finalWritable = await finalHandle.createWritable();
@@ -233,18 +298,28 @@ export async function downloadModelToOpfs(
     onProgress?.({ receivedBytes, totalBytes: receivedBytes, percent: 100 });
     return true;
   } catch (err) {
-    try {
-      await writable.abort();
-      await root.removeEntry(tempName).catch(() => {});
-    } catch {
-      // ignore cleanup failure
+    if (writable) {
+      try {
+        // Close instead of abort when bytes were written so the next attempt can resume via Range.
+        if (wroteNewBytes) {
+          await writable.close();
+        } else {
+          await writable.abort();
+        }
+      } catch {
+        // ignore cleanup failure
+      }
     }
     if (err instanceof TypeError && /fetch/i.test(err.message)) {
       throw new Error(
-        `Network/CORS error fetching ${merged.filename} (${err.message}). If mobile Chrome blocks the 2.3 GB stream, download the .litertlm file in your browser and use "Import .litertlm".`
+        `Network/CORS error fetching ${merged.filename} (${err.message}). Tap Download again to resume, or use "Direct Link" + "Import .litertlm".`
       );
     }
     throw err;
+  } finally {
+    if (wakeLock) {
+      await wakeLock.release().catch(() => {});
+    }
   }
 }
 
