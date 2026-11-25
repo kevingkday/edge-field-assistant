@@ -7,6 +7,7 @@ import {
   Download,
   FileJson,
   HardDrive,
+  ImagePlus,
   Mic,
   RotateCcw,
   Send,
@@ -27,6 +28,7 @@ import {
   type ModelDownloadProgress,
   type StepEvaluationResult,
 } from '@edge-field-assistant/core';
+import { createSamplePhotoForSchema } from '../utils/samplePhotos';
 
 interface SpeechRecognitionInstance {
   lang: string;
@@ -61,6 +63,7 @@ interface FieldCaptureUIProps {
   onEvaluateStep: (frameBlob: Blob | null, transcript: string) => Promise<void>;
   onResetSession: () => void;
   onExportSession: () => void;
+  hasRemoteEndpoint?: boolean;
 }
 
 export const FieldCaptureUI: React.FC<FieldCaptureUIProps> = ({
@@ -85,6 +88,7 @@ export const FieldCaptureUI: React.FC<FieldCaptureUIProps> = ({
   onEvaluateStep,
   onResetSession,
   onExportSession,
+  hasRemoteEndpoint = false,
 }) => {
   const [transcript, setTranscript] = useState('');
   const [pendingBlob, setPendingBlob] = useState<Blob | null>(null);
@@ -166,6 +170,31 @@ export const FieldCaptureUI: React.FC<FieldCaptureUIProps> = ({
     if (pendingPreviewUrl) {
       URL.revokeObjectURL(pendingPreviewUrl);
       setPendingPreviewUrl(null);
+    }
+  };
+
+  const handleTrySamplePhoto = async () => {
+    try {
+      const { blob, suggestedTranscript } = await createSamplePhotoForSchema(schema.id);
+      const nextTranscript = transcript.trim() ? transcript : suggestedTranscript;
+      if (pendingPreviewUrl) URL.revokeObjectURL(pendingPreviewUrl);
+      const previewUrl = URL.createObjectURL(blob);
+      setPendingBlob(blob);
+      setPendingPreviewUrl(previewUrl);
+      if (!transcript.trim()) {
+        setTranscript(suggestedTranscript);
+      }
+
+      if (capability.state === 'opfs_cached' || hasRemoteEndpoint) {
+        await onEvaluateStep(blob, nextTranscript);
+        setTranscript('');
+        setPendingBlob(null);
+        URL.revokeObjectURL(previewUrl);
+        setPendingPreviewUrl(null);
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Sample photo failed';
+      alert(msg);
     }
   };
 
@@ -291,7 +320,7 @@ export const FieldCaptureUI: React.FC<FieldCaptureUIProps> = ({
               onChange={handlePhotoSelected}
             />
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', gap: 10 }}>
               <button
                 type="button"
                 className="btn btn-primary"
@@ -301,6 +330,18 @@ export const FieldCaptureUI: React.FC<FieldCaptureUIProps> = ({
               >
                 <Camera size={18} />
                 {analyzingStep ? 'Analyzing Frame...' : 'Snap Field Photo'}
+              </button>
+
+              <button
+                type="button"
+                className="btn"
+                style={{ padding: '14px 12px', fontSize: 13 }}
+                onClick={handleTrySamplePhoto}
+                disabled={analyzingStep}
+                title="Load a built-in sample photo for desktop testing without a camera"
+              >
+                <ImagePlus size={16} />
+                Try Sample Photo
               </button>
 
               <button

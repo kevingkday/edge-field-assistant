@@ -1,7 +1,7 @@
 {
-  "name": "Edge Field Assistant",
-  "short_name": "FieldEdge",
-  "description": "Fast, Private, Offline Multimodal Field Assistant powered by WebGPU + OPFS",
+  "name": "TwinRover",
+  "short_name": "TwinRover",
+  "description": "TwinRover Sovereign Edge Field Assistant • Powered by Ocean Falls",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#090d16",

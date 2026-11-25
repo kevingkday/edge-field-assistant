@@ -1,4 +1,4 @@
-const CACHE_NAME = 'edge-field-assistant-v3';
+const CACHE_NAME = 'edge-field-assistant-v4';
 const PRECACHE_URLS = [
   '/',
   '/index.html',
@@ -9,6 +9,7 @@ const PRECACHE_URLS = [
   '/schemas/bc-residential-archetype.json',
   '/schemas/oceanfalls-facility.json',
   '/schemas/twinflow-lead-intake.json',
+  '/schemas/general-voice-notes.json',
 ];
 
 self.addEventListener('install', (event) => {

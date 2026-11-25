@@ -5,6 +5,7 @@ export const BUILT_IN_SCHEMA_IDS = new Set([
   'bc-residential-archetype',
   'oceanfalls-facility',
   'twinflow-lead-intake',
+  'general-voice-notes',
 ]);
 
 export const CUSTOM_SCHEMAS_STORAGE_KEY = 'edge_field_assistant_custom_schemas_v1';

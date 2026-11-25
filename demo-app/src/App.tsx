@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Activity, Cloud, CloudOff, Lock, Monitor, ShieldCheck, Smartphone } from 'lucide-react';
+import { Activity, Cloud, CloudOff, Lock, MessageSquare, Monitor, ShieldCheck, Smartphone } from 'lucide-react';
 import {
   FieldAssistantRouter,
   createChecklistFromSchema,
@@ -18,9 +18,14 @@ import {
   type TelemetrySnapshot,
 } from '@edge-field-assistant/core';
 import { DesktopStudio } from './components/DesktopStudio';
+import { FeedbackDrawer } from './components/FeedbackDrawer';
 import { FieldCaptureUI } from './components/FieldCaptureUI';
+import { MicroNodeUpgradeModal } from './components/MicroNodeUpgradeModal';
+import { ModeSwitcher } from './components/ModeSwitcher';
 import { SchemaBuilder } from './components/SchemaBuilder';
+import { SovereigntyBanner, type RuntimeModeLabel } from './components/SovereigntyBanner';
 import { TelemetryDrawer } from './components/TelemetryDrawer';
+import { flushFeedbackQueue, type FeedbackDiagnostics } from './utils/feedbackQueue';
 import {
   loadAdminToken,
   loadAndSyncSchemas,
@@ -78,7 +83,7 @@ function useIsDesktop(): boolean {
 
 export default function App() {
   const isDesktop = useIsDesktop();
-  const [desktopView, setDesktopView] = useState<'studio' | 'field'>('studio');
+  const [desktopView, setDesktopView] = useState<'studio' | 'field'>('field');
 
   const [schemas, setSchemas] = useState<FieldAppSchema[]>([FALLBACK_DEFAULT_SCHEMA]);
   const [activeSchemaId, setActiveSchemaId] = useState<string>('twincover-cope');
@@ -132,6 +137,8 @@ export default function App() {
   );
   const [schemaModalOpen, setSchemaModalOpen] = useState(false);
   const [telemetryOpen, setTelemetryOpen] = useState(false);
+  const [upgradeModalOpen, setUpgradeModalOpen] = useState(false);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
 
   const routerRef = useRef<FieldAssistantRouter | null>(null);
 
@@ -169,12 +176,19 @@ export default function App() {
     detectDeviceCapability(activeModelConfig, { forceLocalWebGpu }).then(setCapability);
   }, [activeModelConfig, forceLocalWebGpu]);
 
-  // Listen to online/offline events
+  // Listen to online/offline events and flush queued feedback when online
   useEffect(() => {
-    const onOnline = () => setIsOnline(true);
+    const onOnline = () => {
+      setIsOnline(true);
+      flushFeedbackQueue().catch(() => {});
+    };
     const onOffline = () => setIsOnline(false);
     window.addEventListener('online', onOnline);
     window.addEventListener('offline', onOffline);
+
+    if (typeof navigator === 'undefined' || navigator.onLine) {
+      flushFeedbackQueue().catch(() => {});
+    }
 
     return () => {
       window.removeEventListener('online', onOnline);
@@ -415,19 +429,38 @@ export default function App() {
 
   const showDesktopStudio = isDesktop && desktopView === 'studio';
 
+  const runtimeMode: RuntimeModeLabel =
+    lastResult?.backend === 'remote_vision' ||
+    (capability.state !== 'opfs_cached' && remoteEndpointUrl.trim().length > 0)
+      ? 'MicroNode Fallback'
+      : 'Gemma 4 WebGPU (Offline Ready)';
+
+  const feedbackDiagnostics: FeedbackDiagnostics = {
+    userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'unknown',
+    hasWebGPU: capability.hasWebGpu,
+    deviceMemory: capability.deviceMemoryGb,
+    activeSchemaId: activeSchema.id,
+    inferenceLatencyMs: lastResult?.latencyMs ?? null,
+  };
+
   return (
     <div className="app-shell">
+      <SovereigntyBanner
+        runtimeMode={runtimeMode}
+        onOpenUpgradeModal={() => setUpgradeModalOpen(true)}
+      />
+
       <header className="topbar">
         <div className="brand">
           <div className="brand-badge">
             <ShieldCheck size={18} />
           </div>
           <div>
-            <div className="brand-title">Edge Field Assistant</div>
+            <div className="brand-title">TwinRover</div>
             <div className="brand-sub">
               {showDesktopStudio
                 ? 'Desktop Studio · Schema Authoring & D1 Model Registry'
-                : '100% Local WebGPU + OPFS Field Execution'}
+                : 'Sovereign Edge Field Assistant • Powered by Ocean Falls'}
             </div>
           </div>
         </div>
@@ -484,6 +517,10 @@ export default function App() {
             </span>
           )}
 
+          <button type="button" className="btn" onClick={() => setFeedbackOpen(true)}>
+            <MessageSquare size={15} /> Feedback
+          </button>
+
           <button type="button" className="btn" onClick={() => setTelemetryOpen(true)}>
             <Activity size={15} /> {isDesktop ? 'Telemetry' : 'Settings'}
           </button>
@@ -514,29 +551,36 @@ export default function App() {
             onClearOpfsModel={handleDeleteOpfsModel}
           />
         ) : (
-          <FieldCaptureUI
-            schema={activeSchema}
-            checklist={checklist}
-            extractedData={extractedData}
-            flags={flags}
-            photos={photos}
-            capability={capability}
-            downloadProgress={downloadProgress}
-            downloadingModel={downloadingModel}
-            analyzingStep={analyzingStep}
-            lastResult={lastResult}
-            handsFreeVoice={handsFreeVoice}
-            onToggleHandsFreeVoice={() => setHandsFreeVoice((v) => !v)}
-            availableModels={availableModels}
-            activeModelId={activeModelId}
-            onSelectModel={handleSelectModel}
-            onDownloadModel={handleDownloadModel}
-            onImportModelFile={handleImportModelFile}
-            onDeleteModel={handleDeleteOpfsModel}
-            onEvaluateStep={(blob, txt) => handleEvaluateStep(blob, txt).then(() => undefined)}
-            onResetSession={() => handleSchemaSelect(activeSchema.id)}
-            onExportSession={handleExportSession}
-          />
+          <>
+            <ModeSwitcher
+              activeSchemaId={activeSchema.id}
+              onSelectSchema={handleSchemaSelect}
+            />
+            <FieldCaptureUI
+              schema={activeSchema}
+              checklist={checklist}
+              extractedData={extractedData}
+              flags={flags}
+              photos={photos}
+              capability={capability}
+              downloadProgress={downloadProgress}
+              downloadingModel={downloadingModel}
+              analyzingStep={analyzingStep}
+              lastResult={lastResult}
+              handsFreeVoice={handsFreeVoice}
+              onToggleHandsFreeVoice={() => setHandsFreeVoice((v) => !v)}
+              availableModels={availableModels}
+              activeModelId={activeModelId}
+              onSelectModel={handleSelectModel}
+              onDownloadModel={handleDownloadModel}
+              onImportModelFile={handleImportModelFile}
+              onDeleteModel={handleDeleteOpfsModel}
+              onEvaluateStep={(blob, txt) => handleEvaluateStep(blob, txt).then(() => undefined)}
+              onResetSession={() => handleSchemaSelect(activeSchema.id)}
+              onExportSession={handleExportSession}
+              hasRemoteEndpoint={Boolean(remoteEndpointUrl.trim())}
+            />
+          </>
         )}
       </main>
 
@@ -574,6 +618,17 @@ export default function App() {
         onDeleteCustomModel={handleDeleteModelEntry}
         jsonState={{ schemaId: activeSchema.id, extractedData, flags, checklist }}
         onClose={() => setTelemetryOpen(false)}
+      />
+
+      <MicroNodeUpgradeModal
+        isOpen={upgradeModalOpen}
+        onClose={() => setUpgradeModalOpen(false)}
+      />
+
+      <FeedbackDrawer
+        isOpen={feedbackOpen}
+        diagnostics={feedbackDiagnostics}
+        onClose={() => setFeedbackOpen(false)}
       />
     </div>
   );

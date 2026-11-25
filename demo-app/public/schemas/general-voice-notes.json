@@ -1,0 +1,42 @@
+{
+  "id": "general-voice-notes",
+  "version": "1.0.0",
+  "name": "Offline Voice-to-Action-Notes",
+  "description": "Speak messy field, site, or meeting notes and extract structured summary, action items, key entities, and follow-up date.",
+  "domain": "voice_notes",
+  "persona": "executive field note-taker and structured action-item extraction copilot",
+  "flagLabel": "Risks & Blockers",
+  "accentColor": "#f59e0b",
+  "items": [
+    {
+      "id": "voice_note_capture",
+      "label": "Field or Meeting Voice Note",
+      "category": "Voice Capture",
+      "promptHint": "Speak or type messy field observations, people/companies mentioned, tasks, and follow-up dates (or snap a whiteboard/memo).",
+      "extractKeys": ["summary", "action_items", "key_entities", "follow_up_date"],
+      "fieldSpecs": [
+        {
+          "key": "summary",
+          "type": "string",
+          "description": "Concise 1-2 sentence summary of the spoken or written note"
+        },
+        {
+          "key": "action_items",
+          "type": "string",
+          "description": "Concrete next steps or action items extracted from the note"
+        },
+        {
+          "key": "key_entities",
+          "type": "string",
+          "description": "People, companies, locations, or equipment referenced"
+        },
+        {
+          "key": "follow_up_date",
+          "type": "string",
+          "description": "Mentioned or target follow-up date"
+        }
+      ],
+      "required": true
+    }
+  ]
+}

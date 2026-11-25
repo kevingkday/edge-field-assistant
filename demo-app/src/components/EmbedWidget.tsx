@@ -434,7 +434,7 @@ export const EmbedWidget: React.FC<EmbedWidgetProps> = ({
         <>
           <button type="button" className="ofe-fab" onClick={() => setOpen((v) => !v)}>
             <Sparkles size={16} />
-            {open ? 'Close Field Capture' : 'Field Capture AI'}
+            {open ? 'Close TwinRover' : 'TwinRover AI'}
           </button>
           {open && <div className="ofe-floating-panel">{panelBody}</div>}
         </>

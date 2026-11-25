@@ -44,6 +44,16 @@ interface CustomModelRow {
 
 const SCHEMA_KV_PREFIX = 'schema:';
 const MODEL_KV_PREFIX = 'model:';
+const FEEDBACK_KV_PREFIX = 'feedback:';
+
+interface FeedbackRow {
+  id: string;
+  rating: string;
+  message: string;
+  email: string | null;
+  diagnostics_json: string;
+  created_at: string;
+}
 
 function jsonResponse(
   data: unknown,
@@ -483,6 +493,132 @@ async function handleModelProxyRequest(request: Request): Promise<Response> {
   }
 }
 
+async function handleFeedbackRequest(request: Request, env: Env): Promise<Response> {
+  const method = request.method.toUpperCase();
+
+  if (method === 'GET') {
+    if (!isAuthorized(request, env)) {
+      return jsonResponse({ error: 'Unauthorized: valid SCHEMA_ADMIN_TOKEN required.' }, 401);
+    }
+
+    try {
+      if (env.SCHEMAS_DB) {
+        const { results } = await env.SCHEMAS_DB.prepare(
+          'SELECT id, rating, message, email, diagnostics_json, created_at FROM tester_feedback ORDER BY created_at DESC LIMIT 200'
+        ).all<FeedbackRow>();
+        return jsonResponse(results || [], 200, { 'X-Feedback-Storage': 'd1' });
+      }
+      if (env.SCHEMAS_KV) {
+        const listed = await env.SCHEMAS_KV.list({ prefix: FEEDBACK_KV_PREFIX });
+        const rows = await Promise.all(
+          listed.keys.map(async (k) => {
+            const raw = await env.SCHEMAS_KV!.get(k.name);
+            if (!raw) return null;
+            try {
+              return JSON.parse(raw) as FeedbackRow;
+            } catch {
+              return null;
+            }
+          })
+        );
+        return jsonResponse(
+          rows
+            .filter((r): r is FeedbackRow => r !== null)
+            .sort((a, b) => (a.created_at < b.created_at ? 1 : -1)),
+          200,
+          { 'X-Feedback-Storage': 'kv' }
+        );
+      }
+      return jsonResponse([], 200, { 'X-Feedback-Storage': 'logs' });
+    } catch (err) {
+      return jsonResponse(
+        { error: err instanceof Error ? err.message : 'Failed to load feedback' },
+        500
+      );
+    }
+  }
+
+  if (method === 'POST') {
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
+      return jsonResponse({ error: 'Invalid JSON request body.' }, 400);
+    }
+
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      return jsonResponse({ error: 'Request body must be a JSON object.' }, 400);
+    }
+
+    const record = body as Record<string, unknown>;
+    const rating = typeof record.rating === 'string' ? record.rating.trim() : '';
+    const message = typeof record.message === 'string' ? record.message.trim() : '';
+    const email =
+      typeof record.email === 'string' && record.email.trim() ? record.email.trim() : null;
+
+    if (!rating) {
+      return jsonResponse({ error: 'Feedback must include a "rating".' }, 400);
+    }
+
+    const rawDiag =
+      record.diagnostics && typeof record.diagnostics === 'object' && !Array.isArray(record.diagnostics)
+        ? (record.diagnostics as Record<string, unknown>)
+        : {};
+
+    // Strictly whitelist non-sensitive diagnostic metadata (never photos or transcripts).
+    const diagnostics = {
+      userAgent: typeof rawDiag.userAgent === 'string' ? rawDiag.userAgent.slice(0, 300) : null,
+      hasWebGPU: Boolean(rawDiag.hasWebGPU),
+      deviceMemory:
+        typeof rawDiag.deviceMemory === 'number' && Number.isFinite(rawDiag.deviceMemory)
+          ? rawDiag.deviceMemory
+          : null,
+      activeSchemaId:
+        typeof rawDiag.activeSchemaId === 'string' ? rawDiag.activeSchemaId.slice(0, 100) : null,
+      inferenceLatencyMs:
+        typeof rawDiag.inferenceLatencyMs === 'number' && Number.isFinite(rawDiag.inferenceLatencyMs)
+          ? Math.round(rawDiag.inferenceLatencyMs)
+          : null,
+    };
+
+    const createdAt = new Date().toISOString();
+    const id = `fb_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const row: FeedbackRow = {
+      id,
+      rating: rating.slice(0, 80),
+      message: message.slice(0, 4000),
+      email: email ? email.slice(0, 200) : null,
+      diagnostics_json: JSON.stringify(diagnostics),
+      created_at: createdAt,
+    };
+
+    console.log(JSON.stringify({ type: 'tester_feedback', ...row }));
+
+    if (env.SCHEMAS_DB) {
+      try {
+        await env.SCHEMAS_DB.prepare(
+          `INSERT INTO tester_feedback (id, rating, message, email, diagnostics_json, created_at)
+           VALUES (?, ?, ?, ?, ?, ?)`
+        )
+          .bind(row.id, row.rating, row.message, row.email, row.diagnostics_json, row.created_at)
+          .run();
+        return jsonResponse({ ok: true, storage: 'd1', id: row.id }, 200);
+      } catch {
+        // Fall through to KV or logs if migration hasn't been applied yet
+      }
+    }
+
+    if (env.SCHEMAS_KV) {
+      await env.SCHEMAS_KV.put(`${FEEDBACK_KV_PREFIX}${row.created_at}_${row.id}`, JSON.stringify(row));
+      return jsonResponse({ ok: true, storage: 'kv', id: row.id }, 200);
+    }
+
+    return jsonResponse({ ok: true, storage: 'logs', id: row.id }, 200);
+  }
+
+  return jsonResponse({ error: 'Method not allowed' }, 405);
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
@@ -497,6 +633,10 @@ export default {
 
     if (url.pathname === '/api/model-proxy') {
       return handleModelProxyRequest(request);
+    }
+
+    if (url.pathname === '/api/feedback') {
+      return handleFeedbackRequest(request, env);
     }
 
     if (env.ASSETS) {
