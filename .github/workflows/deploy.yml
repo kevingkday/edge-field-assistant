@@ -1,15 +1,17 @@
-name: Deploy TwinRover to Cloudflare Workers
+name: CI Check (Typecheck, Test & Build)
 
 on:
   push:
     branches:
       - main
-  workflow_dispatch:
+  pull_request:
+    branches:
+      - main
 
 jobs:
-  deploy:
+  ci:
     runs-on: ubuntu-latest
-    name: Check, Test, Build & Deploy
+    name: Check, Test & Build
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -31,10 +33,3 @@ jobs:
 
       - name: Build core & demo-app
         run: npm run build
-
-      - name: Deploy to Cloudflare Workers
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: deploy
