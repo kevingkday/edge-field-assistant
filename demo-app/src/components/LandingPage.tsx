@@ -80,15 +80,27 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigateApp }) => {
       {/* Sticky Top Navbar */}
       <header className="landing-nav">
         <div className="landing-nav-inner">
-          <a href="/" className="landing-brand" aria-label="TwinRover Home">
-            <span className="brand-badge">
-              <ShieldCheck size={18} />
+          <div className="landing-brand">
+            <a href="/" className="landing-brand-home" aria-label="TwinRover Home">
+              <span className="brand-badge">
+                <ShieldCheck size={18} />
+              </span>
+              <span className="landing-brand-text">
+                <strong>TwinRover</strong>
+              </span>
+            </a>
+            <span className="landing-brand-by">
+              by{' '}
+              <a
+                href="https://www.oceanfalls.com"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="landing-brand-of-link"
+              >
+                Ocean Falls
+              </a>
             </span>
-            <span className="landing-brand-text">
-              <strong>TwinRover</strong>
-              <span className="landing-brand-by">by Ocean Falls</span>
-            </span>
-          </a>
+          </div>
 
           <nav className="landing-nav-links" aria-label="Primary navigation">
             <a
@@ -407,7 +419,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigateApp }) => {
                   <Check size={15} /> BC FIPPA / OCAP® sovereign hardware &amp; SLA
                 </li>
               </ul>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 'auto' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 'auto' }}>
                 <button
                   type="button"
                   className="landing-btn landing-btn-primary landing-tier-cta"
@@ -416,12 +428,20 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigateApp }) => {
                   Request MicroNode Team Demo <ArrowRight size={14} />
                 </button>
                 <a
-                  href="https://www.oceanfalls.com/site-assessment.html"
+                  href="https://www.oceanfalls.com/#pocket-to-pod"
                   target="_blank"
-                  rel="noreferrer"
+                  rel="noopener noreferrer"
                   className="landing-secondary-link"
                 >
-                  Or book a Site Assessment on oceanfalls.com <ExternalLink size={12} />
+                  Explore Dedicated MicroNode Hardware &amp; BC Sovereign Enclaves →
+                </a>
+                <a
+                  href="https://www.oceanfalls.com/security-brief.html"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="landing-secondary-link"
+                >
+                  Security &amp; Governance Brief <ExternalLink size={12} />
                 </a>
               </div>
             </div>
@@ -432,10 +452,11 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigateApp }) => {
       <footer className="landing-footer">
         <div className="landing-footer-inner">
           <span>
-            <strong>TwinRover</strong> — Sovereign Edge Field Assistant • Powered by{' '}
-            <a href="https://www.oceanfalls.com" target="_blank" rel="noreferrer">
-              Ocean Falls
-            </a>
+            TwinRover is a Sovereign Edge AI product built by{' '}
+            <a href="https://www.oceanfalls.com" target="_blank" rel="noopener noreferrer">
+              <strong>Ocean Falls Technology Corp.</strong>
+            </a>{' '}
+            • British Columbia, Canada
           </span>
           <div className="landing-footer-links">
             <a
