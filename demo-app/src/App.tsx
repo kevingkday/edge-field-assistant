@@ -65,6 +65,18 @@ const FALLBACK_DEFAULT_SCHEMA: FieldAppSchema = {
   ],
 };
 
+const MODE_PARAM_TO_SCHEMA_ID: Record<string, string> = {
+  inspection: 'twincover-cope',
+  ocr: 'twinflow-lead-intake',
+  notes: 'general-voice-notes',
+};
+
+function getInitialSchemaIdFromUrl(): string {
+  if (typeof window === 'undefined') return 'twincover-cope';
+  const mode = new URLSearchParams(window.location.search).get('mode')?.toLowerCase() || '';
+  return MODE_PARAM_TO_SCHEMA_ID[mode] || 'twincover-cope';
+}
+
 function useIsDesktop(): boolean {
   const [isDesktop, setIsDesktop] = useState(() =>
     typeof window !== 'undefined' ? window.matchMedia('(min-width: 768px)').matches : true
@@ -81,12 +93,17 @@ function useIsDesktop(): boolean {
   return isDesktop;
 }
 
-export default function App() {
+interface AppProps {
+  onNavigateHome?: () => void;
+}
+
+export default function App({ onNavigateHome }: AppProps = {}) {
   const isDesktop = useIsDesktop();
   const [desktopView, setDesktopView] = useState<'studio' | 'field'>('field');
 
+  const initialSchemaIdRef = useRef<string>(getInitialSchemaIdFromUrl());
   const [schemas, setSchemas] = useState<FieldAppSchema[]>([FALLBACK_DEFAULT_SCHEMA]);
-  const [activeSchemaId, setActiveSchemaId] = useState<string>('twincover-cope');
+  const [activeSchemaId, setActiveSchemaId] = useState<string>(initialSchemaIdRef.current);
 
   const activeSchema = useMemo(
     () => schemas.find((s) => s.id === activeSchemaId) || schemas[0] || FALLBACK_DEFAULT_SCHEMA,
@@ -160,8 +177,10 @@ export default function App() {
       setSyncStatus(status);
       if (loaded.length > 0) {
         setSchemas(loaded);
-        setActiveSchemaId(loaded[0].id);
-        setChecklist(createChecklistFromSchema(loaded[0]));
+        const preferred =
+          loaded.find((s) => s.id === initialSchemaIdRef.current) || loaded[0];
+        setActiveSchemaId(preferred.id);
+        setChecklist(createChecklistFromSchema(preferred));
       }
     });
 
@@ -451,7 +470,18 @@ export default function App() {
       />
 
       <header className="topbar">
-        <div className="brand">
+        <a
+          href="/"
+          className="brand"
+          style={{ textDecoration: 'none', color: 'inherit' }}
+          onClick={(e) => {
+            if (onNavigateHome) {
+              e.preventDefault();
+              onNavigateHome();
+            }
+          }}
+          title="Back to TwinRover overview"
+        >
           <div className="brand-badge">
             <ShieldCheck size={18} />
           </div>
@@ -463,7 +493,7 @@ export default function App() {
                 : 'Sovereign Edge Field Assistant • Powered by Ocean Falls'}
             </div>
           </div>
-        </div>
+        </a>
 
         <div className="topbar-controls">
           {!showDesktopStudio && (
